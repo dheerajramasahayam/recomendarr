@@ -1,0 +1,16 @@
+services:
+  recomendarr:
+    build: .
+    container_name: recomendarr
+    ports:
+      - "3000:3000"
+    environment:
+      # All configuration for recomendarr is handled via the web UI.
+      # The database stores these settings persistently.
+      - DATABASE_PATH=/app/data/recomendarr.db
+    volumes:
+      - recomendarr-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  recomendarr-data:
