@@ -20,7 +20,34 @@
 
 ---
 
-## 🚀 Getting Started
+## � App Preview
+
+<p align="center">
+  <img src="docs/recomendarr_final_demo_1772059102541.webp" alt="Recomendarr Demo" width="100%">
+</p>
+
+<details>
+<summary><b>Click to view more screenshots</b></summary>
+
+<br/>
+
+**Dashboard Overview**
+<img src="docs/dashboard.png" alt="Dashboard" width="100%">
+
+**Smart AI Recommendations**
+<img src="docs/recommendations.png" alt="Recommendations" width="100%">
+
+**Connection Testing & Settings**
+<img src="docs/settings.png" alt="Settings" width="100%">
+
+**Real-time System Logs**
+<img src="docs/logs.png" alt="Logs" width="100%">
+
+</details>
+
+---
+
+## �🚀 Getting Started
 
 Recomendarr is designed to be ridiculously easy to spin up, primarily via Docker. All configuration and API keys are handled entirely through the Web UI during the initial Setup Wizard.
 
