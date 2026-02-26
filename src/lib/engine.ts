@@ -7,6 +7,14 @@ import { addRecommendation, addLog, getRecommendations, updateRecommendationStat
 import { getConfig } from './config';
 import type { Recommendation, WatchedItem } from './types';
 
+export interface EngineFilters {
+    genres?: string[];
+    language?: string;
+    yearMin?: number;
+    yearMax?: number;
+    mediaType?: 'movie' | 'series' | 'all';
+}
+
 interface LibraryItem {
     tmdbId?: number;
     tvdbId?: number;
@@ -40,7 +48,7 @@ export function getIsRunning(): boolean {
     return isRunning;
 }
 
-export async function runRecommendationEngine(): Promise<RunResult> {
+export async function runRecommendationEngine(filters?: EngineFilters): Promise<RunResult> {
     if (isRunning) {
         throw new Error('Recommendation engine is already running');
     }
@@ -237,6 +245,35 @@ export async function runRecommendationEngine(): Promise<RunResult> {
             if (alreadyExists) {
                 addLog({ level: 'DEBUG', message: `Skipping "${rec.title}" — already in library or watched`, source: 'engine' });
                 continue;
+            }
+
+            // Apply user filters
+            if (filters) {
+                // Genre filter
+                if (filters.genres && filters.genres.length > 0) {
+                    const recGenres = (rec.genres || []).map(g => g.toLowerCase());
+                    const matchesGenre = filters.genres.some((fg: string) => recGenres.includes(fg.toLowerCase()));
+                    if (!matchesGenre) {
+                        addLog({ level: 'DEBUG', message: `Filtered out "${rec.title}" — does not match genre filter`, source: 'engine' });
+                        continue;
+                    }
+                }
+                // Year range filter
+                if (rec.year) {
+                    if (filters.yearMin && rec.year < filters.yearMin) {
+                        addLog({ level: 'DEBUG', message: `Filtered out "${rec.title}" (${rec.year}) — before year range`, source: 'engine' });
+                        continue;
+                    }
+                    if (filters.yearMax && rec.year > filters.yearMax) {
+                        addLog({ level: 'DEBUG', message: `Filtered out "${rec.title}" (${rec.year}) — after year range`, source: 'engine' });
+                        continue;
+                    }
+                }
+                // Media type filter
+                if (filters.mediaType && filters.mediaType !== 'all' && rec.mediaType !== filters.mediaType) {
+                    addLog({ level: 'DEBUG', message: `Filtered out "${rec.title}" — type ${rec.mediaType} doesn't match filter ${filters.mediaType}`, source: 'engine' });
+                    continue;
+                }
             }
 
             // Save to DB

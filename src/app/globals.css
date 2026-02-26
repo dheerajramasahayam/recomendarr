@@ -1294,6 +1294,121 @@ body {
   box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
 }
 
+/* Filter Panel */
+.filter-panel {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 20px 24px;
+  margin-bottom: 20px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  animation: fadeIn 0.2s ease;
+}
+
+.filter-section {
+  flex: 1;
+  min-width: 200px;
+}
+
+.filter-section:first-child {
+  flex: 0 0 auto;
+}
+
+.filter-label {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.filter-count {
+  color: var(--accent-purple);
+  font-weight: 600;
+}
+
+.genre-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.genre-chip {
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.genre-chip:hover {
+  border-color: var(--accent-purple);
+  color: var(--text-primary);
+}
+
+.genre-chip.active {
+  background: rgba(139, 92, 246, 0.15);
+  border-color: var(--accent-purple);
+  color: var(--accent-purple);
+}
+
+.year-range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.year-range input {
+  width: 120px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.year-range input:focus {
+  border-color: var(--accent-purple);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+}
+
+.year-dash {
+  color: var(--text-muted);
+  font-size: 16px;
+}
+
+.filter-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-end;
+}
+
+.filter-badge {
+  background: var(--accent-purple);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 6px;
+}
+
 .btn-lg {
   padding: 12px 28px !important;
   font-size: 15px !important;

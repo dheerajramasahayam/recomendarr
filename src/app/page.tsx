@@ -83,6 +83,14 @@ function HomeContent() {
   // Connection test state — MUST be here (before any early returns) to satisfy Rules of Hooks
   const [connResults, setConnResults] = useState<Record<string, { success?: boolean; testing: boolean; extra?: string }>>({});
 
+  // Engine filter state
+  const [engineFilters, setEngineFilters] = useState({
+    genres: [] as string[],
+    yearMin: 0,
+    yearMax: 0,
+    mediaType: 'all' as 'movie' | 'series' | 'all',
+  });
+
   const toast = useCallback((msg: string, type = 'info') => {
     const id = Date.now();
     setToasts((prev) => [...prev, { id, msg, type }]);
@@ -177,7 +185,20 @@ function HomeContent() {
     setIsRunning(true);
     toast('🚀 Recommendation engine started...', 'info');
     try {
-      const res = await fetch('/api/engine', { method: 'POST' });
+      // Build filters object, only including non-default values
+      const filters: Record<string, unknown> = {};
+      if (engineFilters.genres.length > 0) filters.genres = engineFilters.genres;
+      if (engineFilters.yearMin > 0) filters.yearMin = engineFilters.yearMin;
+      if (engineFilters.yearMax > 0) filters.yearMax = engineFilters.yearMax;
+      if (engineFilters.mediaType !== 'all') filters.mediaType = engineFilters.mediaType;
+
+      const hasFilters = Object.keys(filters).length > 0;
+
+      const res = await fetch('/api/engine', {
+        method: 'POST',
+        headers: hasFilters ? { 'Content-Type': 'application/json' } : {},
+        body: hasFilters ? JSON.stringify({ filters }) : undefined,
+      });
       const data = await res.json();
       if (data.error) {
         toast(`❌ ${data.error}`, 'error');
@@ -368,6 +389,8 @@ function HomeContent() {
             onRun={runEngine}
             onAction={handleAction}
             loading={loading}
+            engineFilters={engineFilters}
+            setEngineFilters={setEngineFilters}
           />
         )}
 
@@ -514,7 +537,7 @@ function HomeContent() {
 // Dashboard Page
 // ============================================
 function DashboardPage({
-  counts, recs, isRunning, onRun, onAction, loading,
+  counts, recs, isRunning, onRun, onAction, loading, engineFilters, setEngineFilters,
 }: {
   counts: Counts;
   recs: Recommendation[];
@@ -522,8 +545,29 @@ function DashboardPage({
   onRun: () => void;
   onAction: (id: string, action: string) => void;
   loading: boolean;
+  engineFilters: { genres: string[]; yearMin: number; yearMax: number; mediaType: 'movie' | 'series' | 'all' };
+  setEngineFilters: React.Dispatch<React.SetStateAction<{ genres: string[]; yearMin: number; yearMax: number; mediaType: 'movie' | 'series' | 'all' }>>;
 }) {
+  const [showFilters, setShowFilters] = useState(false);
   const pendingRecs = recs.filter((r) => r.status === 'pending').slice(0, 6);
+
+  const GENRES = ['Action', 'Adventure', 'Animation', 'Comedy', 'Crime', 'Documentary', 'Drama', 'Family', 'Fantasy', 'History', 'Horror', 'Music', 'Mystery', 'Romance', 'Sci-Fi', 'Thriller', 'War', 'Western'];
+
+  const toggleGenre = (genre: string) => {
+    setEngineFilters(prev => ({
+      ...prev,
+      genres: prev.genres.includes(genre)
+        ? prev.genres.filter(g => g !== genre)
+        : [...prev.genres, genre],
+    }));
+  };
+
+  const activeFilterCount = [
+    engineFilters.genres.length > 0,
+    engineFilters.yearMin > 0,
+    engineFilters.yearMax > 0,
+    engineFilters.mediaType !== 'all',
+  ].filter(Boolean).length;
 
   return (
     <>
@@ -532,16 +576,83 @@ function DashboardPage({
           <h2>Dashboard</h2>
           <p>Your media recommendation overview</p>
         </div>
-        <button className="btn btn-primary btn-lg" onClick={onRun} disabled={isRunning}>
-          {isRunning ? (
-            <>
-              <div className="spinner" /> Running...
-            </>
-          ) : (
-            <>🚀 Run Engine</>
-          )}
-        </button>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <button className={`btn ${showFilters ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setShowFilters(v => !v)}>
+            🎯 Filters{activeFilterCount > 0 && <span className="filter-badge">{activeFilterCount}</span>}
+          </button>
+          <button className="btn btn-primary btn-lg" onClick={onRun} disabled={isRunning}>
+            {isRunning ? (
+              <><div className="spinner" /> Running...</>
+            ) : (
+              <>🚀 Run Engine</>
+            )}
+          </button>
+        </div>
       </div>
+
+      {/* Collapsible Filter Panel */}
+      {showFilters && (
+        <div className="filter-panel">
+          <div className="filter-section">
+            <label className="filter-label">🎬 Media Type</label>
+            <div className="type-selector">
+              {(['all', 'movie', 'series'] as const).map(type => (
+                <button
+                  key={type}
+                  className={`type-pill ${engineFilters.mediaType === type ? 'active' : ''}`}
+                  onClick={() => setEngineFilters(prev => ({ ...prev, mediaType: type }))}
+                >
+                  {type === 'all' ? '🎯 All' : type === 'movie' ? '🎬 Movies' : '📺 Series'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="filter-section">
+            <label className="filter-label">🎭 Genres {engineFilters.genres.length > 0 && <span className="filter-count">({engineFilters.genres.length})</span>}</label>
+            <div className="genre-chips">
+              {GENRES.map(genre => (
+                <button
+                  key={genre}
+                  className={`genre-chip ${engineFilters.genres.includes(genre) ? 'active' : ''}`}
+                  onClick={() => toggleGenre(genre)}
+                >
+                  {genre}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="filter-section">
+            <label className="filter-label">📅 Year Range</label>
+            <div className="year-range">
+              <input
+                type="number"
+                placeholder="From (e.g. 2000)"
+                value={engineFilters.yearMin || ''}
+                onChange={e => setEngineFilters(prev => ({ ...prev, yearMin: parseInt(e.target.value) || 0 }))}
+                min="1900"
+                max="2030"
+              />
+              <span className="year-dash">—</span>
+              <input
+                type="number"
+                placeholder="To (e.g. 2025)"
+                value={engineFilters.yearMax || ''}
+                onChange={e => setEngineFilters(prev => ({ ...prev, yearMax: parseInt(e.target.value) || 0 }))}
+                min="1900"
+                max="2030"
+              />
+            </div>
+          </div>
+
+          <div className="filter-actions">
+            <button className="btn btn-ghost btn-sm" onClick={() => setEngineFilters({ genres: [], yearMin: 0, yearMax: 0, mediaType: 'all' })}>
+              🗑️ Clear All
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="stats-grid">
         <div className="stat-card purple">
