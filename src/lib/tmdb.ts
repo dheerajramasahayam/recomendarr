@@ -164,3 +164,79 @@ export async function getRecommendationsForItem(
 
     return recommendations;
 }
+
+// Reverse map: genre name → TMDb genre ID
+const GENRE_NAME_TO_ID: Record<string, number> = {};
+for (const [id, name] of Object.entries(GENRE_MAP)) {
+    GENRE_NAME_TO_ID[name.toLowerCase()] = parseInt(id);
+}
+
+export interface DiscoverFilters {
+    genres?: string[];
+    yearMin?: number;
+    yearMax?: number;
+    mediaType?: 'movie' | 'series' | 'all';
+}
+
+export async function discoverByFilters(
+    filters: DiscoverFilters,
+    maxResults = 20
+): Promise<Recommendation[]> {
+    const recommendations: Recommendation[] = [];
+    const types: Array<'movie' | 'tv'> = [];
+
+    if (!filters.mediaType || filters.mediaType === 'all') {
+        types.push('movie', 'tv');
+    } else if (filters.mediaType === 'movie') {
+        types.push('movie');
+    } else {
+        types.push('tv');
+    }
+
+    // Convert genre names to TMDb genre IDs
+    const genreIds = (filters.genres || [])
+        .map(name => GENRE_NAME_TO_ID[name.toLowerCase()])
+        .filter(Boolean);
+
+    for (const type of types) {
+        try {
+            const params: Record<string, string | number> = {
+                sort_by: 'vote_average.desc',
+                'vote_count.gte': 100,
+                page: 1,
+            };
+
+            if (genreIds.length > 0) {
+                params.with_genres = genreIds.join(',');
+            }
+
+            if (type === 'movie') {
+                if (filters.yearMin) params['primary_release_date.gte'] = `${filters.yearMin}-01-01`;
+                if (filters.yearMax) params['primary_release_date.lte'] = `${filters.yearMax}-12-31`;
+            } else {
+                if (filters.yearMin) params['first_air_date.gte'] = `${filters.yearMin}-01-01`;
+                if (filters.yearMax) params['first_air_date.lte'] = `${filters.yearMax}-12-31`;
+            }
+
+            const res = await getTmdbClient().get(`/discover/${type}`, { params });
+            const results: TmdbResult[] = res.data.results || [];
+            const mediaType = type === 'movie' ? 'movie' : 'series';
+
+            for (const result of results.slice(0, Math.ceil(maxResults / types.length))) {
+                recommendations.push(
+                    tmdbResultToRecommendation(result, mediaType as 'movie' | 'series', 'tmdb', 'filter-discovery')
+                );
+            }
+
+            addLog({
+                level: 'INFO',
+                message: `🔍 TMDb discover (${type}) found ${results.length} results with filters: genres=[${filters.genres?.join(', ') || 'any'}], years=${filters.yearMin || 'any'}-${filters.yearMax || 'any'}`,
+                source: 'tmdb',
+            });
+        } catch (err) {
+            addLog({ level: 'ERROR', message: `TMDb discover (${type}) failed: ${(err as Error).message}`, source: 'tmdb' });
+        }
+    }
+
+    return recommendations;
+}

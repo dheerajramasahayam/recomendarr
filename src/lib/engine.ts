@@ -1,5 +1,5 @@
 import { createMediaServerConnector } from './media-server';
-import { getRecommendationsForItem, getTmdbExternalIds, searchTmdb } from './tmdb';
+import { getRecommendationsForItem, getTmdbExternalIds, searchTmdb, discoverByFilters } from './tmdb';
 import { getAiRecommendations } from './ai-recommender';
 import { addMovieToRadarr, getAllRadarrMovies } from './radarr';
 import { addSeriesToSonarr, getAllSonarrSeries } from './sonarr';
@@ -127,7 +127,15 @@ export async function runRecommendationEngine(filters?: EngineFilters): Promise<
         const cfg = getConfig();
         const maxPerItem = Math.ceil(cfg.app.maxRecommendationsPerRun / Math.min(watchHistory.length, 10));
 
-        for (const item of watchHistory.slice(0, 10)) {
+        // Filter watch history by media type if filter is set
+        let filteredHistory = watchHistory;
+        if (filters?.mediaType && filters.mediaType !== 'all') {
+            filteredHistory = watchHistory.filter(item => item.mediaType === filters.mediaType);
+            if (filteredHistory.length === 0) filteredHistory = watchHistory; // fallback
+            addLog({ level: 'INFO', message: `🔍 Filtered watch history to ${filteredHistory.length} ${filters.mediaType} items`, source: 'engine' });
+        }
+
+        for (const item of filteredHistory.slice(0, 10)) {
             try {
                 const recs = await getRecommendationsForItem(item, maxPerItem);
                 allTmdbRecs.push(...recs);
@@ -136,15 +144,32 @@ export async function runRecommendationEngine(filters?: EngineFilters): Promise<
             }
         }
 
+        // Step 2b: Filter-driven discovery via TMDb /discover endpoint
+        if (filters && (filters.genres?.length || filters.yearMin || filters.yearMax || (filters.mediaType && filters.mediaType !== 'all'))) {
+            try {
+                addLog({ level: 'INFO', message: `🔍 Running filter-driven TMDb discovery...`, source: 'engine' });
+                const discoverRecs = await discoverByFilters({
+                    genres: filters.genres,
+                    yearMin: filters.yearMin,
+                    yearMax: filters.yearMax,
+                    mediaType: filters.mediaType,
+                }, cfg.app.maxRecommendationsPerRun);
+                allTmdbRecs.push(...discoverRecs);
+                addLog({ level: 'INFO', message: `🔍 Filter discovery added ${discoverRecs.length} recommendations`, source: 'engine' });
+            } catch (err) {
+                result.errors.push(`TMDb discover error: ${(err as Error).message}`);
+            }
+        }
+
         result.tmdbRecommendations = allTmdbRecs.length;
         addLog({ level: 'INFO', message: `🎯 TMDb found ${allTmdbRecs.length} recommendations`, source: 'engine' });
 
-        // Step 3: Get AI recommendations
+        // Step 3: Get AI recommendations (with filter context)
         let aiRecs: Recommendation[] = [];
         const aiCfg = getConfig().ai;
         if (aiCfg.enabled) {
             try {
-                aiRecs = await getAiRecommendations(watchHistory, 10);
+                aiRecs = await getAiRecommendations(watchHistory, 10, filters);
                 result.aiRecommendations = aiRecs.length;
                 addLog({ level: 'INFO', message: `🤖 AI generated ${aiRecs.length} recommendations`, source: 'engine' });
             } catch (err) {

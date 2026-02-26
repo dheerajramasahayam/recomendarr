@@ -47,7 +47,8 @@ IMPORTANT: Return ONLY the JSON array, no other text.`;
 
 export async function getAiRecommendations(
     watchHistory: WatchedItem[],
-    maxRecommendations = 10
+    maxRecommendations = 10,
+    filters?: { genres?: string[]; yearMin?: number; yearMax?: number; mediaType?: 'movie' | 'series' | 'all' }
 ): Promise<Recommendation[]> {
     const config = getConfig();
     if (!config.ai.enabled || !config.ai.apiKey) {
@@ -64,12 +65,36 @@ export async function getAiRecommendations(
         return `${i + 1}. "${item.title}" (${item.year || 'N/A'}) - ${item.mediaType} - Genres: ${genres}`;
     }).join('\n');
 
+    // Build filter constraints for the prompt
+    let filterInstructions = '';
+    if (filters) {
+        const constraints: string[] = [];
+        if (filters.genres && filters.genres.length > 0) {
+            constraints.push(`MUST be in these genres: ${filters.genres.join(', ')}`);
+        }
+        if (filters.yearMin && filters.yearMax) {
+            constraints.push(`MUST be released between ${filters.yearMin} and ${filters.yearMax}`);
+        } else if (filters.yearMin) {
+            constraints.push(`MUST be released after ${filters.yearMin}`);
+        } else if (filters.yearMax) {
+            constraints.push(`MUST be released before ${filters.yearMax}`);
+        }
+        if (filters.mediaType === 'movie') {
+            constraints.push('Recommend ONLY movies, no TV series');
+        } else if (filters.mediaType === 'series') {
+            constraints.push('Recommend ONLY TV series, no movies');
+        }
+        if (constraints.length > 0) {
+            filterInstructions = `\n\nIMPORTANT FILTER CONSTRAINTS:\n${constraints.map(c => `- ${c}`).join('\n')}`;
+        }
+    }
+
     const userPrompt = `Based on this watch history, recommend ${maxRecommendations} new titles:
 
 WATCH HISTORY:
-${historyText}
+${historyText}${filterInstructions}
 
-Recommend a diverse mix of movies and TV series. Return ONLY a valid JSON array.`;
+${filterInstructions ? 'Follow the filter constraints strictly.' : 'Recommend a diverse mix of movies and TV series.'} Return ONLY a valid JSON array.`;
 
     try {
         addLog({ level: 'INFO', message: `Requesting AI recommendations for ${historyContext.length} watched items`, source: 'ai' });
