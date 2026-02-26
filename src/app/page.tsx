@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, startTransition, Suspense } from 'react';
+import { useState, useEffect, useCallback, Suspense } from 'react';
 
 type MediaType = 'movie' | 'series';
 type RecStatus = 'pending' | 'approved' | 'rejected' | 'added';
@@ -79,6 +79,9 @@ function HomeContent() {
   const [selectedFolder, setSelectedFolder] = useState<string>('');
   const [searchForContent, setSearchForContent] = useState(true);
   const [addingToLibrary, setAddingToLibrary] = useState(false);
+
+  // Connection test state — MUST be here (before any early returns) to satisfy Rules of Hooks
+  const [connResults, setConnResults] = useState<Record<string, { success?: boolean; testing: boolean; extra?: string }>>({});
 
   const toast = useCallback((msg: string, type = 'info') => {
     const id = Date.now();
@@ -280,8 +283,7 @@ function HomeContent() {
     toast('🗑️ Logs cleared', 'info');
   };
 
-  // Connection test state
-  const [connResults, setConnResults] = useState<Record<string, { success?: boolean; testing: boolean; extra?: string }>>({});
+  // testConnection uses connResults state that is now declared at the top of the component
 
   const testConnection = async (service: string) => {
     setConnResults((prev) => ({ ...prev, [service]: { testing: true } }));
