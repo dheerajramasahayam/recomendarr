@@ -1,4 +1,7 @@
-FROM node:20-alpine AS builder
+FROM node:20.18-alpine3.21 AS builder
+
+# Upgrade Alpine packages to fix busybox and zlib vulnerabilities
+RUN apk update && apk upgrade --no-cache
 
 WORKDIR /app
 COPY package*.json ./
@@ -6,8 +9,18 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
-FROM node:20-alpine AS runner
+FROM node:20.18-alpine3.21 AS runner
 WORKDIR /app
+
+# Upgrade Alpine packages to fix busybox and zlib vulnerabilities
+RUN apk update && apk upgrade --no-cache
+
+# Remove npm and yarn completely from the runner stage to fix their vulnerabilities
+RUN rm -rf /usr/local/lib/node_modules/npm \
+    /usr/local/bin/npm \
+    /usr/local/bin/npx \
+    /opt/yarn* \
+    /usr/local/bin/yarn*
 
 ENV NODE_ENV=production
 

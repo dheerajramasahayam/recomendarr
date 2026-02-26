@@ -30,5 +30,12 @@
     "eslint-config-next": "16.1.6",
     "tailwindcss": "^4",
     "typescript": "^5"
+  },
+  "overrides": {
+    "tar": "^7.0.0",
+    "minimatch": "^10.0.0",
+    "cross-spawn": "^7.0.6",
+    "glob": "^11.0.0",
+    "diff": "^7.0.0"
   }
 }
