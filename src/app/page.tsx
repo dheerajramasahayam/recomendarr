@@ -143,7 +143,10 @@ export default function Home() {
         <SetupWizard
           step={setupStep}
           setStep={setSetupStep}
-          onComplete={() => startTransition(() => setSetupComplete(true))}
+          onComplete={() => {
+            setToasts([{ id: Date.now(), msg: '🎉 Setup complete! Loading dashboard...', type: 'success' }]);
+            setTimeout(() => window.location.reload(), 1500);
+          }}
           toast={toast}
         />
         <div className="toast-container">
