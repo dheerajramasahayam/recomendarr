@@ -20,21 +20,31 @@ function getSettingsDb(): Database.Database {
   const dbPath = path.resolve(DB_PATH);
   const dir = path.dirname(dbPath);
   if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+    } catch (err) {
+      console.error(`CRITICAL: Failed to create database directory at ${dir}`, err);
+      throw new Error(`Cannot write to ${dir}. Check your TrueNAS/Docker volume permissions!`);
+    }
   }
 
-  const db = new Database(dbPath);
-  db.pragma('journal_mode = WAL');
+  try {
+    const db = new Database(dbPath);
+    db.pragma('journal_mode = WAL');
 
-  // Ensure settings table exists
-  db.exec(`
-        CREATE TABLE IF NOT EXISTS settings (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL
-        );
-    `);
+    // Ensure settings table exists
+    db.exec(`
+          CREATE TABLE IF NOT EXISTS settings (
+              key TEXT PRIMARY KEY,
+              value TEXT NOT NULL
+          );
+      `);
 
-  return db;
+    return db;
+  } catch (err) {
+    console.error('CRITICAL: SQLite failed to open the database file:', err);
+    throw new Error(`Database error: ${(err as Error).message}. Check /app/data volume permissions.`);
+  }
 }
 
 function loadSettings(): Record<string, string> {
@@ -80,6 +90,7 @@ export function saveSetting(key: string, value: string): void {
     clearSettingsCache();
   } catch (err) {
     console.error(`Failed to save setting ${key}:`, err);
+    throw err;
   }
 }
 
@@ -99,6 +110,7 @@ export function saveSettings(settings: Record<string, string>): void {
     clearSettingsCache();
   } catch (err) {
     console.error('Failed to save settings:', err);
+    throw err;
   }
 }
 
