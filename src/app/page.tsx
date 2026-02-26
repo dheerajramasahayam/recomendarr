@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, startTransition } from 'react';
+import { useState, useEffect, useCallback, startTransition, Suspense } from 'react';
 
 type MediaType = 'movie' | 'series';
 type RecStatus = 'pending' | 'approved' | 'rejected' | 'added';
@@ -46,6 +46,18 @@ interface ArrProfile { id: number; name: string }
 interface ArrFolder { id: number; path: string; freeSpace: number }
 
 export default function Home() {
+  return (
+    <Suspense fallback={
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--bg-primary)' }}>
+        <div className="spinner" style={{ width: 40, height: 40 }} />
+      </div>
+    }>
+      <HomeContent />
+    </Suspense>
+  );
+}
+
+function HomeContent() {
   const [page, setPage] = useState<Page>('dashboard');
   const [setupComplete, setSetupComplete] = useState<boolean | null>(null);
   const [setupStep, setSetupStep] = useState(0);
