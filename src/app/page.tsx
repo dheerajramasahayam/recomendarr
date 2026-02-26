@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, startTransition } from 'react';
 
 type MediaType = 'movie' | 'series';
 type RecStatus = 'pending' | 'approved' | 'rejected' | 'added';
@@ -143,7 +143,7 @@ export default function Home() {
         <SetupWizard
           step={setupStep}
           setStep={setSetupStep}
-          onComplete={() => setSetupComplete(true)}
+          onComplete={() => startTransition(() => setSetupComplete(true))}
           toast={toast}
         />
         <div className="toast-container">
