@@ -45,6 +45,23 @@
 
 </details>
 
+### 📺 Supported Media Servers
+
+Recomendarr supports **Plex**, **Jellyfin**, and **Emby** out of the box. Choose your server during setup — the wizard dynamically adapts fields and instructions for each.
+
+<table>
+<tr>
+<td align="center"><b>📺 Plex</b></td>
+<td align="center"><b>🟣 Jellyfin</b></td>
+<td align="center"><b>🟢 Emby</b></td>
+</tr>
+<tr>
+<td><img src="docs/setup-plex.png" alt="Plex Setup" width="300"></td>
+<td><img src="docs/setup-jellyfin.png" alt="Jellyfin Setup" width="300"></td>
+<td><img src="docs/setup-emby.png" alt="Emby Setup" width="300"></td>
+</tr>
+</table>
+
 ---
 
 ## �🚀 Getting Started
