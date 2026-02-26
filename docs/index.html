@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <!-- SEO Meta Tags -->
+  <title>Recomendarr | AI-Powered Media Recommendation Engine</title>
+  <meta name="description" content="A self-hosted, AI-powered media recommendation engine that analyzes your watch history and automatically adds personalized movie and TV show recommendations directly to Radarr and Sonarr.">
+  <meta name="keywords" content="Recomendarr, AI, media, Plex, Jellyfin, Emby, Sonarr, Radarr, self-hosted, Docker, automation, movies, TV shows, TMDb, OpenAI, GPT-4, recommendations">
+  <meta name="author" content="dheerajr00">
+  <link rel="canonical" href="https://dheerajramasahayam.github.io/recomendarr/">
+
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://dheerajramasahayam.github.io/recomendarr/">
+  <meta property="og:title" content="Recomendarr | AI Media Discovery Engine">
+  <meta property="og:description" content="Self-hosted AI that automates tailored media recommendations directly into Radarr and Sonarr.">
+  <meta property="og:image" content="https://dheerajramasahayam.github.io/recomendarr/dashboard.png">
+
+  <!-- Twitter -->
+  <meta property="twitter:card" content="summary_large_image">
+  <meta property="twitter:url" content="https://dheerajramasahayam.github.io/recomendarr/">
+  <meta property="twitter:title" content="Recomendarr | AI Media Discovery Engine">
+  <meta property="twitter:description" content="Self-hosted AI that automates tailored media recommendations directly into Radarr and Sonarr.">
+  <meta property="twitter:image" content="https://dheerajramasahayam.github.io/recomendarr/dashboard.png">
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@500;700;800&display=swap" rel="stylesheet">
+  
+  <!-- FontAwesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            display: ['Outfit', 'sans-serif'],
+          },
+          colors: {
+            brand: {
+              400: '#9b82fa',
+              500: '#8b5cf6',
+              600: '#7c3aed',
+            },
+            dark: {
+              900: '#0f1014',
+              800: '#16181d',
+              700: '#1d1f27',
+              600: '#2b2e38',
+            }
+          },
+          animation: {
+            'float': 'float 6s ease-in-out infinite',
+            'fadeIn': 'fadeIn 0.8s ease-out forwards',
+          },
+          keyframes: {
+            float: {
+              '0%, 100%': { transform: 'translateY(0)' },
+              '50%': { transform: 'translateY(-20px)' },
+            },
+            fadeIn: {
+              '0%': { opacity: '0', transform: 'translateY(20px)' },
+              '100%': { opacity: '1', transform: 'translateY(0)' },
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    body {
+      background-color: #0f1014;
+      color: #e2e8f0;
+      overflow-x: hidden;
+    }
+    
+    .glass-nav {
+      background: rgba(15, 16, 20, 0.7);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+
+    .glass-card {
+      background: linear-gradient(145deg, rgba(29, 31, 39, 0.6), rgba(22, 24, 29, 0.8));
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+      transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+    }
+
+    .glass-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 12px 40px 0 rgba(139, 92, 246, 0.15);
+      border-color: rgba(139, 92, 246, 0.3);
+    }
+
+    .gradient-text {
+      background: linear-gradient(135deg, #a78bfa, #60a5fa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hero-glow {
+      position: absolute;
+      width: 60vw;
+      height: 60vw;
+      background: radial-gradient(circle, rgba(139,92,246,0.15) 0%, rgba(15,16,20,0) 70%);
+      top: -20vw;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: -1;
+      border-radius: 50%;
+      pointer-events: none;
+    }
+
+    .feature-icon-wrapper {
+      background: linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(96, 165, 250, 0.2));
+      border: 1px solid rgba(139, 92, 246, 0.3);
+    }
+    
+    .code-block {
+      background: #16181d;
+      border: 1px solid #2b2e38;
+      border-radius: 0.75rem;
+    }
+    
+    .delayed-1 { animation-delay: 0.1s; }
+    .delayed-2 { animation-delay: 0.2s; }
+    .delayed-3 { animation-delay: 0.3s; }
+    .delayed-4 { animation-delay: 0.4s; }
+    .delayed-5 { animation-delay: 0.5s; }
+  </style>
+</head>
+<body class="antialiased selection:bg-brand-500 selection:text-white pb-20">
+
+  <!-- Navigation -->
+  <nav class="fixed w-full z-50 glass-nav transition-all duration-300">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-20">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-400 to-blue-500 flex items-center justify-center text-white font-display font-bold text-xl shadow-lg shadow-brand-500/30">
+            R
+          </div>
+          <span class="font-display font-bold text-xl tracking-wide text-white">Recomendarr</span>
+        </div>
+        <div class="hidden md:block">
+          <div class="ml-10 flex items-baseline space-x-8">
+            <a href="#features" class="text-gray-300 hover:text-white hover:text-brand-400 transition-colors px-3 py-2 rounded-md text-sm font-medium">Features</a>
+            <a href="#screenshots" class="text-gray-300 hover:text-white hover:text-brand-400 transition-colors px-3 py-2 rounded-md text-sm font-medium">Screenshots</a>
+            <a href="#install" class="text-gray-300 hover:text-white hover:text-brand-400 transition-colors px-3 py-2 rounded-md text-sm font-medium">Installation</a>
+            <a href="https://github.com/dheerajramasahayam/recomendarr" target="_blank" class="bg-white/10 hover:bg-white/20 border border-white/10 text-white px-5 py-2.5 rounded-full text-sm font-medium transition-all flex items-center gap-2">
+              <i class="fab fa-github text-lg"></i> GitHub
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Hero Section -->
+  <div class="relative pt-32 pb-20 lg:pt-48 lg:pb-32 overflow-hidden">
+    <div class="hero-glow"></div>
+    
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 text-center">
+      <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand-500/10 border border-brand-500/20 text-brand-400 text-sm font-medium mb-8 animate-fadeIn">
+        <span class="flex h-2 w-2 rounded-full bg-brand-500 animate-pulse"></span>
+        v1.0 Now Live
+      </div>
+      
+      <h1 class="text-5xl md:text-7xl font-display font-extrabold tracking-tight mb-6 animate-fadeIn delayed-1 leading-tight">
+        The Ultimate <span class="gradient-text">AI Media</span><br/> Recommendation Engine
+      </h1>
+      
+      <p class="mt-4 max-w-2xl mx-auto text-xl text-gray-400 animate-fadeIn delayed-2">
+        Analyzes your Plex, Jellyfin, or Emby watch history to automatically discover and add hyper-personalized movies and TV shows straight into Radarr and Sonarr.
+      </p>
+      
+      <div class="mt-10 flex justify-center gap-4 animate-fadeIn delayed-3">
+        <a href="#install" class="bg-brand-500 hover:bg-brand-600 text-white px-8 py-4 rounded-full font-semibold text-lg transition-all shadow-lg shadow-brand-500/30 hover:shadow-brand-500/50 hover:-translate-y-1">
+          <i class="fas fa-rocket mr-2"></i> Get Started
+        </a>
+        <a href="#screenshots" class="bg-dark-800 hover:bg-dark-700 border border-dark-600 text-white px-8 py-4 rounded-full font-semibold text-lg transition-all hover:border-gray-500">
+          View Demo
+        </a>
+      </div>
+      
+      <!-- Technologies Bar -->
+      <div class="mt-16 pt-8 border-t border-white/5 flex flex-wrap justify-center gap-8 md:gap-16 opacity-60 grayscale hover:grayscale-0 transition-all duration-500 animate-fadeIn delayed-4">
+        <div class="flex items-center gap-2 font-display text-lg font-semibold"><i class="fas fa-play text-[#e5a00d]"></i> Plex</div>
+        <div class="flex items-center gap-2 font-display text-lg"><img src="https://raw.githubusercontent.com/jellyfin/jellyfin-ux/master/branding/SVG/icon-transparent.svg" class="w-6 h-6"/> Jellyfin</div>
+        <div class="flex items-center gap-2 font-display text-lg font-semibold"><i class="fa-solid fa-server text-[#52B54B]"></i> Emby</div>
+        <div class="flex items-center gap-2 font-display text-lg font-semibold"><i class="fas fa-film text-[#ffc230]"></i> Radarr</div>
+        <div class="flex items-center gap-2 font-display text-lg font-semibold"><i class="fas fa-tv text-[#29bded]"></i> Sonarr</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- App Preview / Demo -->
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-8 relative z-20 animate-fadeIn delayed-5">
+    <div class="rounded-2xl overflow-hidden border border-white/10 shadow-2xl shadow-black/50 bg-dark-900 group">
+      <div class="px-4 py-3 bg-dark-800 border-b border-white/5 flex items-center gap-2">
+        <div class="w-3 h-3 rounded-full bg-red-500"></div>
+        <div class="w-3 h-3 rounded-full bg-yellow-500"></div>
+        <div class="w-3 h-3 rounded-full bg-green-500"></div>
+        <div class="ml-4 text-xs font-mono text-gray-500">recomendarr.local</div>
+      </div>
+      <img src="recomendarr_final_demo_1772059102541.webp" alt="Recomendarr Interactive Demo" class="w-full object-cover group-hover:scale-[1.01] transition-transform duration-700" />
+    </div>
+  </div>
+
+  <!-- Features Section -->
+  <div id="features" class="py-24 relative">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="text-center mb-16">
+        <h2 class="text-3xl md:text-5xl font-display font-bold mb-4">Why use <span class="gradient-text">Recomendarr?</span></h2>
+        <p class="text-gray-400 max-w-2xl mx-auto">Stop digging through endless lists. Let your actual viewing habits drive automated content discovery.</p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+        
+        <!-- Feature 1 -->
+        <div class="glass-card p-8 rounded-2xl">
+          <div class="w-14 h-14 rounded-2xl feature-icon-wrapper flex items-center justify-center text-brand-400 text-2xl mb-6">
+            <i class="fas fa-brain"></i>
+          </div>
+          <h3 class="text-xl font-bold text-white mb-3">AI Context Engine</h3>
+          <p class="text-gray-400 leading-relaxed">Connects to OpenAI (or any compatible LLM) to analyze your history and explain *exactly* why a movie fits your mood.</p>
+        </div>
+
+        <!-- Feature 2 -->
+        <div class="glass-card p-8 rounded-2xl">
+          <div class="w-14 h-14 rounded-2xl feature-icon-wrapper flex items-center justify-center text-blue-400 text-2xl mb-6">
+            <i class="fas fa-plug"></i>
+          </div>
+          <h3 class="text-xl font-bold text-white mb-3">Zero-Config Setup</h3>
+          <p class="text-gray-400 leading-relaxed">No confusing `.env` files. Spin up via Docker and follow a beautiful 4-step UI wizard to connect everything instantly.</p>
+        </div>
+
+        <!-- Feature 3 -->
+        <div class="glass-card p-8 rounded-2xl">
+          <div class="w-14 h-14 rounded-2xl feature-icon-wrapper flex items-center justify-center text-green-400 text-2xl mb-6">
+            <i class="fas fa-download"></i>
+          </div>
+          <h3 class="text-xl font-bold text-white mb-3">Direct Arr Injection</h3>
+          <p class="text-gray-400 leading-relaxed">Automatically sends approved media directly into Radarr and Sonarr with your predefined quality profiles and root folders.</p>
+        </div>
+
+        <!-- Feature 4 -->
+        <div class="glass-card p-8 rounded-2xl">
+          <div class="w-14 h-14 rounded-2xl feature-icon-wrapper flex items-center justify-center text-purple-400 text-2xl mb-6">
+            <i class="fas fa-database"></i>
+          </div>
+          <h3 class="text-xl font-bold text-white mb-3">DB-Backed Persistance</h3>
+          <p class="text-gray-400 leading-relaxed">All settings, logs, and recommendations are safely stored in a local SQLite database that persists across container rebuilds.</p>
+        </div>
+
+        <!-- Feature 5 -->
+        <div class="glass-card p-8 rounded-2xl">
+          <div class="w-14 h-14 rounded-2xl feature-icon-wrapper flex items-center justify-center text-yellow-500 text-2xl mb-6">
+            <i class="fas fa-chart-pie"></i>
+          </div>
+          <h3 class="text-xl font-bold text-white mb-3">TMDb Dual-Engine</h3>
+          <p class="text-gray-400 leading-relaxed">Combines smart AI reasoning with TMDb's massive dataset to ensure perfect metadata pairing (posters, genres, IDs).</p>
+        </div>
+
+        <!-- Feature 6 -->
+        <div class="glass-card p-8 rounded-2xl">
+          <div class="w-14 h-14 rounded-2xl feature-icon-wrapper flex items-center justify-center text-red-400 text-2xl mb-6">
+            <i class="fas fa-shield-alt"></i>
+          </div>
+          <h3 class="text-xl font-bold text-white mb-3">Privacy First</h3>
+          <p class="text-gray-400 leading-relaxed">100% self-hosted. Your watch history never leaves your network unless you explicitly enable the optional AI module.</p>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Screenshots Gallery -->
+  <div id="screenshots" class="py-24 bg-dark-800/50 border-y border-white/5 relative">
+    <div class="hero-glow" style="top: 0; left: 80%; background: radial-gradient(circle, rgba(96,165,250,0.1) 0%, rgba(15,16,20,0) 70%);"></div>
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      
+      <div class="text-center mb-16">
+        <h2 class="text-3xl md:text-5xl font-display font-bold mb-4">Gorgeous <span class="gradient-text">Interface</span></h2>
+        <p class="text-gray-400 max-w-2xl mx-auto">A modern, responsive, dark-mode-first dashboard built with Next.js and Tailwind.</p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+        
+        <div class="group relative rounded-2xl overflow-hidden border border-white/10 shadow-xl cursor-zoom-in">
+          <img src="dashboard.png" alt="Dashboard Hub" class="w-full h-auto object-cover transform transition-transform duration-500 group-hover:scale-105">
+          <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-6">
+            <h4 class="text-white font-bold text-lg">Command Center Dashboard</h4>
+          </div>
+        </div>
+        
+        <div class="group relative rounded-2xl overflow-hidden border border-white/10 shadow-xl cursor-zoom-in">
+          <img src="recommendations.png" alt="Recommendations Grid" class="w-full h-auto object-cover transform transition-transform duration-500 group-hover:scale-105">
+          <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-6">
+            <h4 class="text-white font-bold text-lg">Smart Triage System</h4>
+          </div>
+        </div>
+
+        <div class="group relative rounded-2xl overflow-hidden border border-white/10 shadow-xl cursor-zoom-in">
+          <img src="settings.png" alt="Settings & Connections" class="w-full h-auto object-cover transform transition-transform duration-500 group-hover:scale-105">
+          <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-6">
+            <h4 class="text-white font-bold text-lg">Live Connection Testing</h4>
+          </div>
+        </div>
+
+        <div class="group relative rounded-2xl overflow-hidden border border-white/10 shadow-xl cursor-zoom-in">
+          <img src="logs.png" alt="System Logs" class="w-full h-auto object-cover transform transition-transform duration-500 group-hover:scale-105">
+          <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-6">
+            <h4 class="text-white font-bold text-lg">Real-time Formatted Logs</h4>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Installation -->
+  <div id="install" class="py-24 relative">
+    <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+      
+      <div class="text-center mb-16">
+        <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-brand-500/10 text-brand-400 text-3xl mb-6">
+          <i class="fab fa-docker"></i>
+        </div>
+        <h2 class="text-3xl md:text-5xl font-display font-bold mb-4">Install in <span class="gradient-text">Minutes</span></h2>
+        <p class="text-gray-400">Deployed safely via Docker. Configured seamlessly via UI.</p>
+      </div>
+
+      <div class="bg-dark-800 rounded-2xl border border-white/10 overflow-hidden shadow-2xl">
+        <!-- Tabs -->
+        <div class="flex border-b border-white/10 bg-dark-900 overflow-x-auto">
+          <button class="px-6 py-4 text-sm font-semibold text-brand-400 border-b-2 border-brand-500 bg-dark-800 flex items-center gap-2">
+            <i class="fas fa-layer-group"></i> Docker Compose
+          </button>
+          <button onclick="document.getElementById('cli').scrollIntoView({behavior: 'smooth', block: 'center'})" class="px-6 py-4 text-sm font-semibold text-gray-400 hover:text-white transition-colors flex items-center gap-2 outline-none">
+            <i class="fas fa-terminal"></i> Docker CLI
+          </button>
+        </div>
+
+        <!-- Content -->
+        <div class="p-8">
+          <h3 class="text-xl font-bold mb-4 flex items-center gap-2"><div class="w-6 h-6 rounded-full bg-brand-500/20 text-brand-400 flex items-center justify-center text-xs font-bold ring-1 ring-brand-500/40">1</div> Create Compose File</h3>
+          <p class="text-gray-400 text-sm mb-4 leading-relaxed">Create a <code class="bg-dark-900 px-1.5 py-0.5 rounded text-gray-300 border border-white/10">docker-compose.yml</code> file on your server.</p>
+          
+          <div class="code-block p-4 mb-8 font-mono text-sm overflow-x-auto relative group">
+            <div class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button class="bg-dark-600 hover:bg-dark-500 text-gray-300 p-2 rounded-lg transition-colors border border-white/10 tooltip" title="Copy"><i class="far fa-copy"></i></button>
+            </div>
+<pre class="text-gray-300"><span class="text-pink-400">services:</span>
+  <span class="text-blue-400">recomendarr:</span>
+    <span class="text-pink-400">image:</span> <span class="text-green-400">dheerajr00/recomendarr:latest</span>
+    <span class="text-pink-400">container_name:</span> <span class="text-green-400">recomendarr</span>
+    <span class="text-pink-400">ports:</span>
+      - <span class="text-yellow-300">"3000:3000"</span>
+    <span class="text-pink-400">volumes:</span>
+      - <span class="text-green-400">recomendarr-data:/app/data</span>
+    <span class="text-pink-400">restart:</span> <span class="text-green-400">unless-stopped</span>
+
+<span class="text-pink-400">volumes:</span>
+  <span class="text-blue-400">recomendarr-data:</span></pre>
+          </div>
+
+          <h3 class="text-xl font-bold mb-4 flex items-center gap-2"><div class="w-6 h-6 rounded-full bg-brand-500/20 text-brand-400 flex items-center justify-center text-xs font-bold ring-1 ring-brand-500/40">2</div> Start & Setup</h3>
+          <p class="text-gray-400 text-sm mb-4 leading-relaxed">Run the compose command, then open your browser to complete the incredibly simple UI Setup Wizard.</p>
+          
+          <div class="code-block p-4 font-mono text-sm overflow-x-auto">
+            <pre class="text-gray-300"><span class="text-blue-400">docker-compose</span> up -d</pre>
+          </div>
+          
+          <p class="text-gray-400 text-sm mt-4">Open <a href="http://localhost:3000" class="text-brand-400 hover:text-brand-300 underline underline-offset-4">http://localhost:3000</a> in your browser.</p>
+
+        </div>
+      </div>
+      
+      <!-- CLI Alternative -->
+      <div id="cli" class="mt-12 p-8 border border-white/10 rounded-2xl bg-dark-900/50">
+        <h3 class="text-lg font-bold mb-3">Prefer standard Docker run?</h3>
+        <div class="code-block p-4 font-mono text-sm overflow-x-auto">
+          <pre class="text-gray-300"><span class="text-blue-400">docker</span> run -d \
+  --name recomendarr \
+  -p 3000:3000 \
+  -v recomendarr-data:/app/data \
+  --restart unless-stopped \
+  dheerajr00/recomendarr:latest</pre>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer class="border-t border-white/5 py-12 mt-12 bg-dark-900 relative z-20">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center justify-between gap-6">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-400 to-blue-500 flex items-center justify-center text-white font-display font-bold shadow-lg">R</div>
+        <span class="font-display font-bold text-lg text-white">Recomendarr</span>
+      </div>
+      
+      <p class="text-gray-500 text-sm">
+        Open source and crafted meticulously by <a href="https://github.com/dheerajramasahayam" class="text-brand-400 hover:text-brand-300">dheerajr00</a>.
+      </p>
+
+      <div class="flex gap-4">
+        <a href="https://hub.docker.com/r/dheerajr00/recomendarr" target="_blank" class="text-gray-400 hover:text-white transition-colors" title="Docker Hub"><i class="fab fa-docker text-2xl"></i></a>
+        <a href="https://github.com/dheerajramasahayam/recomendarr" target="_blank" class="text-gray-400 hover:text-white transition-colors" title="GitHub"><i class="fab fa-github text-2xl"></i></a>
+      </div>
+    </div>
+  </footer>
+
+</body>
+</html>
