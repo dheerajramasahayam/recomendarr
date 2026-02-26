@@ -812,6 +812,7 @@ function SettingsPage({
     media_server_type: 'plex',
     media_server_url: '',
     media_server_api_key: '',
+    media_server_user_id: '',
     sonarr_url: '',
     sonarr_api_key: '',
     radarr_url: '',
@@ -874,13 +875,13 @@ function SettingsPage({
         </button>
       </div>
 
-      {/* Plex Section */}
+      {/* Media Server Section */}
       <div className="settings-section">
         <div className="settings-section-header">
-          <span className="settings-icon">📺</span>
+          <span className="settings-icon">{formData.media_server_type === 'plex' ? '📺' : formData.media_server_type === 'jellyfin' ? '🟣' : '🟢'}</span>
           <div>
-            <h3>Plex Media Server</h3>
-            <p>Your Plex server for watch history</p>
+            <h3>{formData.media_server_type === 'plex' ? 'Plex' : formData.media_server_type === 'jellyfin' ? 'Jellyfin' : 'Emby'} Media Server</h3>
+            <p>Your media server for watch history</p>
           </div>
           <button className="btn btn-ghost btn-sm" onClick={() => onTest('mediaServer')} disabled={connResults['mediaServer']?.testing}>
             {connResults['mediaServer']?.testing ? <div className="spinner" /> : connResults['mediaServer']?.success ? '✅ Connected' : '🔌 Test'}
@@ -888,22 +889,63 @@ function SettingsPage({
         </div>
         <div className="settings-fields">
           <div className="field-row">
-            <label>Plex URL</label>
-            <input type="text" placeholder="http://192.168.1.100:32400" value={formData.media_server_url} onChange={e => updateField('media_server_url', e.target.value)} />
+            <label>Server Type</label>
+            <div className="type-selector">
+              {(['plex', 'jellyfin', 'emby'] as const).map(type => (
+                <button
+                  key={type}
+                  className={`type-pill ${formData.media_server_type === type ? 'active' : ''}`}
+                  onClick={() => updateField('media_server_type', type)}
+                >
+                  {type === 'plex' ? '📺' : type === 'jellyfin' ? '🟣' : '🟢'}
+                  {type.charAt(0).toUpperCase() + type.slice(1)}
+                </button>
+              ))}
+            </div>
           </div>
           <div className="field-row">
-            <label>Plex Token</label>
-            <input type="password" placeholder="Your Plex Token" value={formData.media_server_api_key} onChange={e => updateField('media_server_api_key', e.target.value)} />
+            <label>{formData.media_server_type === 'plex' ? 'Plex' : formData.media_server_type === 'jellyfin' ? 'Jellyfin' : 'Emby'} URL</label>
+            <input type="text" placeholder={formData.media_server_type === 'plex' ? 'http://192.168.1.100:32400' : 'http://192.168.1.100:8096'} value={formData.media_server_url} onChange={e => updateField('media_server_url', e.target.value)} />
           </div>
-          <details className="help-details">
-            <summary>How to find your Plex Token</summary>
-            <ol>
-              <li>Open <strong>Plex Web App</strong> and log in</li>
-              <li>Navigate to any movie or show</li>
-              <li>Click <strong>⋮</strong> → <strong>Get Info</strong> → <strong>View XML</strong></li>
-              <li>In the URL bar, copy the value after <code>X-Plex-Token=</code></li>
-            </ol>
-          </details>
+          <div className="field-row">
+            <label>{formData.media_server_type === 'plex' ? 'Plex Token' : 'API Key'}</label>
+            <input type="password" placeholder={formData.media_server_type === 'plex' ? 'Your Plex Token' : `Your ${formData.media_server_type === 'jellyfin' ? 'Jellyfin' : 'Emby'} API Key`} value={formData.media_server_api_key} onChange={e => updateField('media_server_api_key', e.target.value)} />
+          </div>
+          {formData.media_server_type !== 'plex' && (
+            <div className="field-row">
+              <label>User ID</label>
+              <input type="text" placeholder={`Your ${formData.media_server_type === 'jellyfin' ? 'Jellyfin' : 'Emby'} User ID`} value={formData.media_server_user_id} onChange={e => updateField('media_server_user_id', e.target.value)} />
+            </div>
+          )}
+          {formData.media_server_type === 'plex' && (
+            <details className="help-details">
+              <summary>How to find your Plex Token</summary>
+              <ol>
+                <li>Open <strong>Plex Web App</strong> and log in</li>
+                <li>Navigate to any movie or show</li>
+                <li>Click <strong>⋮</strong> → <strong>Get Info</strong> → <strong>View XML</strong></li>
+                <li>In the URL bar, copy the value after <code>X-Plex-Token=</code></li>
+              </ol>
+            </details>
+          )}
+          {formData.media_server_type === 'jellyfin' && (
+            <details className="help-details">
+              <summary>How to find your Jellyfin API Key &amp; User ID</summary>
+              <ol>
+                <li>Go to <strong>Dashboard</strong> → <strong>API Keys</strong> to create an API key</li>
+                <li>Go to <strong>Dashboard</strong> → <strong>Users</strong>, click a user, and find the User ID in the URL</li>
+              </ol>
+            </details>
+          )}
+          {formData.media_server_type === 'emby' && (
+            <details className="help-details">
+              <summary>How to find your Emby API Key &amp; User ID</summary>
+              <ol>
+                <li>Go to <strong>Settings</strong> → <strong>Advanced</strong> → <strong>API Keys</strong></li>
+                <li>Go to <strong>Settings</strong> → <strong>Users</strong>, click a user, and find the User ID in the URL</li>
+              </ol>
+            </details>
+          )}
         </div>
       </div>
 
@@ -1010,8 +1052,10 @@ function SetupWizard({ step, setStep, onComplete, toast }: {
   toast: (msg: string, type?: string) => void;
 }) {
   const [form, setForm] = useState({
+    media_server_type: 'plex' as 'plex' | 'jellyfin' | 'emby',
     media_server_url: '',
     media_server_api_key: '',
+    media_server_user_id: '',
     sonarr_url: '',
     sonarr_api_key: '',
     radarr_url: '',
@@ -1035,7 +1079,7 @@ function SetupWizard({ step, setStep, onComplete, toast }: {
       await fetch('/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ settings: { ...form, media_server_type: 'plex' } }),
+        body: JSON.stringify({ settings: form }),
       });
       const res = await fetch('/api/test-connection', {
         method: 'POST',
@@ -1063,7 +1107,6 @@ function SetupWizard({ step, setStep, onComplete, toast }: {
         body: JSON.stringify({
           settings: {
             ...form,
-            media_server_type: 'plex',
             setup_complete: 'true',
           }
         }),
@@ -1077,8 +1120,11 @@ function SetupWizard({ step, setStep, onComplete, toast }: {
     }
   };
 
+  const serverLabel = form.media_server_type === 'plex' ? 'Plex' : form.media_server_type === 'jellyfin' ? 'Jellyfin' : 'Emby';
+  const serverIcon = form.media_server_type === 'plex' ? '📺' : form.media_server_type === 'jellyfin' ? '🟣' : '🟢';
+
   const steps = [
-    { title: 'Plex', icon: '📺' },
+    { title: 'Media Server', icon: '📺' },
     { title: 'Sonarr', icon: '📡' },
     { title: 'Radarr', icon: '🎬' },
     { title: 'AI', icon: '🤖' },
@@ -1103,35 +1149,86 @@ function SetupWizard({ step, setStep, onComplete, toast }: {
           ))}
         </div>
 
-        {/* Step 0: Plex */}
+        {/* Step 0: Media Server */}
         {step === 0 && (
           <div className="setup-card">
-            <h2>📺 Connect Plex</h2>
-            <p className="setup-desc">Enter your Plex server URL and authentication token.</p>
+            <h2>{serverIcon} Connect {serverLabel}</h2>
+            <p className="setup-desc">Choose your media server and enter the connection details.</p>
 
+            {/* Media Server Type Selector */}
             <div className="setup-field">
-              <label>Plex Server URL</label>
-              <input type="text" placeholder="http://192.168.1.100:32400" value={form.media_server_url} onChange={e => update('media_server_url', e.target.value)} />
-              <span className="field-hint">Include the port (usually 32400)</span>
-            </div>
-
-            <div className="setup-field">
-              <label>Plex Token</label>
-              <input type="password" placeholder="Your Plex authentication token" value={form.media_server_api_key} onChange={e => update('media_server_api_key', e.target.value)} />
-            </div>
-
-            <div className="setup-help">
-              <h4>🔑 How to find your Plex Token</h4>
-              <ol>
-                <li>Open <a href="https://app.plex.tv" target="_blank" rel="noreferrer">app.plex.tv</a> and log in</li>
-                <li>Navigate to any movie or TV show</li>
-                <li>Click the <strong>⋮ menu</strong> → <strong>Get Info</strong> → <strong>View XML</strong></li>
-                <li>In the URL bar, find <code>X-Plex-Token=</code> and copy the value after it</li>
-              </ol>
-              <div className="setup-example">
-                <code>https://server:32400/library/...?X-Plex-Token=<strong>abcd1234efgh</strong></code>
+              <label>Media Server Type</label>
+              <div className="type-selector">
+                {(['plex', 'jellyfin', 'emby'] as const).map(type => (
+                  <button
+                    key={type}
+                    className={`type-pill ${form.media_server_type === type ? 'active' : ''}`}
+                    onClick={() => { update('media_server_type', type); setTestResult(null); }}
+                  >
+                    {type === 'plex' ? '📺' : type === 'jellyfin' ? '🟣' : '🟢'}
+                    {type.charAt(0).toUpperCase() + type.slice(1)}
+                  </button>
+                ))}
               </div>
             </div>
+
+            <div className="setup-field">
+              <label>{serverLabel} Server URL</label>
+              <input type="text" placeholder={form.media_server_type === 'plex' ? 'http://192.168.1.100:32400' : form.media_server_type === 'jellyfin' ? 'http://192.168.1.100:8096' : 'http://192.168.1.100:8096'} value={form.media_server_url} onChange={e => update('media_server_url', e.target.value)} />
+              <span className="field-hint">Include the port ({form.media_server_type === 'plex' ? 'usually 32400' : 'usually 8096'})</span>
+            </div>
+
+            <div className="setup-field">
+              <label>{form.media_server_type === 'plex' ? 'Plex Token' : 'API Key'}</label>
+              <input type="password" placeholder={form.media_server_type === 'plex' ? 'Your Plex authentication token' : `Your ${serverLabel} API key`} value={form.media_server_api_key} onChange={e => update('media_server_api_key', e.target.value)} />
+            </div>
+
+            {/* User ID field for Jellyfin/Emby */}
+            {form.media_server_type !== 'plex' && (
+              <div className="setup-field">
+                <label>User ID</label>
+                <input type="text" placeholder={`Your ${serverLabel} User ID`} value={form.media_server_user_id} onChange={e => update('media_server_user_id', e.target.value)} />
+                <span className="field-hint">Found in {serverLabel} Dashboard → Users → click user → check the URL for the User ID</span>
+              </div>
+            )}
+
+            {/* Dynamic help text */}
+            {form.media_server_type === 'plex' && (
+              <div className="setup-help">
+                <h4>🔑 How to find your Plex Token</h4>
+                <ol>
+                  <li>Open <a href="https://app.plex.tv" target="_blank" rel="noreferrer">app.plex.tv</a> and log in</li>
+                  <li>Navigate to any movie or TV show</li>
+                  <li>Click the <strong>⋮ menu</strong> → <strong>Get Info</strong> → <strong>View XML</strong></li>
+                  <li>In the URL bar, find <code>X-Plex-Token=</code> and copy the value after it</li>
+                </ol>
+                <div className="setup-example">
+                  <code>https://server:32400/library/...?X-Plex-Token=<strong>abcd1234efgh</strong></code>
+                </div>
+              </div>
+            )}
+            {form.media_server_type === 'jellyfin' && (
+              <div className="setup-help">
+                <h4>🔑 How to find your Jellyfin API Key</h4>
+                <ol>
+                  <li>Open your Jellyfin web interface and log in as admin</li>
+                  <li>Go to <strong>Dashboard</strong> → <strong>API Keys</strong></li>
+                  <li>Click <strong>+</strong> to create a new API key</li>
+                  <li>Give it a name like &quot;Recomendarr&quot; and copy the key</li>
+                </ol>
+              </div>
+            )}
+            {form.media_server_type === 'emby' && (
+              <div className="setup-help">
+                <h4>🔑 How to find your Emby API Key</h4>
+                <ol>
+                  <li>Open your Emby web interface and log in as admin</li>
+                  <li>Go to <strong>Settings</strong> → <strong>Advanced</strong> → <strong>API Keys</strong></li>
+                  <li>Click <strong>New API Key</strong></li>
+                  <li>Give it a name like &quot;Recomendarr&quot; and copy the key</li>
+                </ol>
+              </div>
+            )}
 
             <div className="setup-actions">
               <button className="btn btn-ghost" onClick={() => testConnection('mediaServer')} disabled={testing || !form.media_server_url}>
