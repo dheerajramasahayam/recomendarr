@@ -18,8 +18,9 @@ RUN npm run build
 FROM node:20.18-alpine3.21 AS runner
 WORKDIR /app
 
-# Upgrade Alpine packages to fix busybox and zlib vulnerabilities
-RUN apk update && apk upgrade --no-cache
+# Upgrade Alpine packages to fix busybox and zlib vulnerabilities, and install su-exec for entrypoint perms
+RUN apk update && apk upgrade --no-cache && \
+    apk add --no-cache su-exec
 
 # Remove npm and yarn completely from the runner stage to fix their vulnerabilities
 RUN rm -rf /usr/local/lib/node_modules/npm \
@@ -39,11 +40,12 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
 RUN mkdir -p /app/data && chown nextjs:nodejs /app/data
 
-USER nextjs
+COPY entrypoint.sh /usr/local/bin/
 
 EXPOSE 3000
 
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["node", "server.js"]
