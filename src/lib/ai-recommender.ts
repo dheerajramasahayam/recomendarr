@@ -48,7 +48,7 @@ IMPORTANT: Return ONLY the JSON array, no other text.`;
 export async function getAiRecommendations(
     watchHistory: WatchedItem[],
     maxRecommendations = 10,
-    filters?: { genres?: string[]; yearMin?: number; yearMax?: number; mediaType?: 'movie' | 'series' | 'all' }
+    filters?: { genres?: string[]; language?: string; yearMin?: number; yearMax?: number; mediaType?: 'movie' | 'series' | 'all' }
 ): Promise<Recommendation[]> {
     const config = getConfig();
     if (!config.ai.enabled || !config.ai.apiKey) {
@@ -78,6 +78,19 @@ export async function getAiRecommendations(
             constraints.push(`MUST be released after ${filters.yearMin}`);
         } else if (filters.yearMax) {
             constraints.push(`MUST be released before ${filters.yearMax}`);
+        }
+        if (filters.language && filters.language !== 'all') {
+            // ISO 639-1 language code mapping helper for the prompt
+            const langNames: Record<string, string> = {
+                ar: 'Arabic', bn: 'Bengali', zh: 'Chinese', nl: 'Dutch', en: 'English',
+                fr: 'French', de: 'German', el: 'Greek', gu: 'Gujarati', he: 'Hebrew',
+                hi: 'Hindi', it: 'Italian', ja: 'Japanese', kn: 'Kannada', ko: 'Korean',
+                ml: 'Malayalam', mr: 'Marathi', pa: 'Punjabi', fa: 'Persian', pl: 'Polish',
+                pt: 'Portuguese', ru: 'Russian', es: 'Spanish', sv: 'Swedish', ta: 'Tamil',
+                te: 'Telugu', th: 'Thai', tr: 'Turkish', ur: 'Urdu', vi: 'Vietnamese'
+            };
+            const langName = langNames[filters.language] || filters.language;
+            constraints.push(`CRITICAL MUST: All recommendations MUST be originally produced in the ${langName} language (${filters.language}). DO NOT recommend English titles.`);
         }
         if (filters.mediaType === 'movie') {
             constraints.push('Recommend ONLY movies, no TV series');

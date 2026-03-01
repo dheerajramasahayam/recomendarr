@@ -145,11 +145,12 @@ export async function runRecommendationEngine(filters?: EngineFilters): Promise<
         }
 
         // Step 2b: Filter-driven discovery via TMDb /discover endpoint
-        if (filters && (filters.genres?.length || filters.yearMin || filters.yearMax || (filters.mediaType && filters.mediaType !== 'all'))) {
+        if (filters && (filters.genres?.length || filters.yearMin || filters.yearMax || (filters.language && filters.language !== 'all') || (filters.mediaType && filters.mediaType !== 'all'))) {
             try {
                 addLog({ level: 'INFO', message: `🔍 Running filter-driven TMDb discovery...`, source: 'engine' });
                 const discoverRecs = await discoverByFilters({
                     genres: filters.genres,
+                    language: filters.language,
                     yearMin: filters.yearMin,
                     yearMax: filters.yearMax,
                     mediaType: filters.mediaType,

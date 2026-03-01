@@ -175,6 +175,7 @@ for (const [id, name] of Object.entries(GENRE_MAP)) {
 
 export interface DiscoverFilters {
     genres?: string[];
+    language?: string;
     yearMin?: number;
     yearMax?: number;
     mediaType?: 'movie' | 'series' | 'all';
@@ -210,6 +211,10 @@ export async function discoverByFilters(
 
             if (genreIds.length > 0) {
                 params.with_genres = genreIds.join(',');
+            }
+
+            if (filters.language && filters.language !== 'all') {
+                params.with_original_language = filters.language;
             }
 
             if (type === 'movie') {
