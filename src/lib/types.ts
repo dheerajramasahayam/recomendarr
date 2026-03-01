@@ -23,6 +23,7 @@ export interface Recommendation {
     id?: string;
     title: string;
     year?: number;
+    language?: string;
     mediaType: MediaType;
     tmdbId?: number;
     tvdbId?: number;

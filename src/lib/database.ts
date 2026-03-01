@@ -84,6 +84,14 @@ function initializeDatabase(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_logs_level ON logs(level);
     CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON logs(timestamp);
   `);
+
+    // Dynamic schema evolution for missing columns
+    const tableInfo = db.pragma("table_info(recommendations)") as { name: string }[];
+    const columns = tableInfo.map(col => col.name);
+
+    if (!columns.includes('language')) {
+        db.exec("ALTER TABLE recommendations ADD COLUMN language TEXT;");
+    }
 }
 
 // ---- Recommendation CRUD ----
@@ -101,10 +109,10 @@ export function addRecommendation(rec: Recommendation): Recommendation {
     }
 
     db.prepare(`
-    INSERT INTO recommendations (id, title, year, media_type, tmdb_id, tvdb_id, imdb_id, overview, poster_url, genres, vote_average, source, ai_reasoning, based_on, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO recommendations (id, title, year, language, media_type, tmdb_id, tvdb_id, imdb_id, overview, poster_url, genres, vote_average, source, ai_reasoning, based_on, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
-        id, rec.title, rec.year || null, rec.mediaType,
+        id, rec.title, rec.year || null, rec.language || null, rec.mediaType,
         rec.tmdbId || null, rec.tvdbId || null, rec.imdbId || null,
         rec.overview || null, rec.posterUrl || null,
         rec.genres ? JSON.stringify(rec.genres) : null,
@@ -159,6 +167,7 @@ function rowToRecommendation(row: Record<string, unknown>): Recommendation {
         id: row.id as string,
         title: row.title as string,
         year: row.year as number | undefined,
+        language: row.language as string | undefined,
         mediaType: row.media_type as 'movie' | 'series',
         tmdbId: row.tmdb_id as number | undefined,
         tvdbId: row.tvdb_id as number | undefined,

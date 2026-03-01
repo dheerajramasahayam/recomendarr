@@ -86,6 +86,7 @@ function HomeContent() {
   // Engine filter state
   const [engineFilters, setEngineFilters] = useState({
     genres: [] as string[],
+    language: 'all',
     yearMin: 0,
     yearMax: 0,
     mediaType: 'all' as 'movie' | 'series' | 'all',
@@ -188,6 +189,7 @@ function HomeContent() {
       // Build filters object, only including non-default values
       const filters: Record<string, unknown> = {};
       if (engineFilters.genres.length > 0) filters.genres = engineFilters.genres;
+      if (engineFilters.language !== 'all') filters.language = engineFilters.language;
       if (engineFilters.yearMin > 0) filters.yearMin = engineFilters.yearMin;
       if (engineFilters.yearMax > 0) filters.yearMax = engineFilters.yearMax;
       if (engineFilters.mediaType !== 'all') filters.mediaType = engineFilters.mediaType;
@@ -545,8 +547,8 @@ function DashboardPage({
   onRun: () => void;
   onAction: (id: string, action: string) => void;
   loading: boolean;
-  engineFilters: { genres: string[]; yearMin: number; yearMax: number; mediaType: 'movie' | 'series' | 'all' };
-  setEngineFilters: React.Dispatch<React.SetStateAction<{ genres: string[]; yearMin: number; yearMax: number; mediaType: 'movie' | 'series' | 'all' }>>;
+  engineFilters: { genres: string[]; language: string; yearMin: number; yearMax: number; mediaType: 'movie' | 'series' | 'all' };
+  setEngineFilters: React.Dispatch<React.SetStateAction<{ genres: string[]; language: string; yearMin: number; yearMax: number; mediaType: 'movie' | 'series' | 'all' }>>;
 }) {
   const [showFilters, setShowFilters] = useState(false);
   const pendingRecs = recs.filter((r) => r.status === 'pending').slice(0, 6);
@@ -564,6 +566,7 @@ function DashboardPage({
 
   const activeFilterCount = [
     engineFilters.genres.length > 0,
+    engineFilters.language !== 'all',
     engineFilters.yearMin > 0,
     engineFilters.yearMax > 0,
     engineFilters.mediaType !== 'all',
@@ -624,6 +627,31 @@ function DashboardPage({
           </div>
 
           <div className="filter-section">
+            <label className="filter-label">🌍 Language</label>
+            <div className="year-range">
+              <select
+                className="language-select"
+                style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-tertiary)', color: 'var(--text-primary)', fontSize: '13px', width: '100%', maxWidth: '200px', appearance: 'menulist' }}
+                value={engineFilters.language}
+                onChange={e => setEngineFilters(prev => ({ ...prev, language: e.target.value }))}
+              >
+                <option value="all">🌐 Any Language</option>
+                <option value="en">English</option>
+                <option value="es">Spanish</option>
+                <option value="fr">French</option>
+                <option value="de">German</option>
+                <option value="ja">Japanese</option>
+                <option value="ko">Korean</option>
+                <option value="zh">Chinese</option>
+                <option value="hi">Hindi</option>
+                <option value="it">Italian</option>
+                <option value="pt">Portuguese</option>
+                <option value="ru">Russian</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="filter-section">
             <label className="filter-label">📅 Year Range</label>
             <div className="year-range">
               <input
@@ -647,7 +675,7 @@ function DashboardPage({
           </div>
 
           <div className="filter-actions">
-            <button className="btn btn-ghost btn-sm" onClick={() => setEngineFilters({ genres: [], yearMin: 0, yearMax: 0, mediaType: 'all' })}>
+            <button className="btn btn-ghost btn-sm" onClick={() => setEngineFilters({ genres: [], language: 'all', yearMin: 0, yearMax: 0, mediaType: 'all' })}>
               🗑️ Clear All
             </button>
           </div>

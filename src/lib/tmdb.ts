@@ -24,6 +24,7 @@ interface TmdbResult {
     overview: string;
     poster_path?: string;
     genre_ids?: number[];
+    original_language?: string;
     vote_average: number;
 }
 
@@ -104,6 +105,7 @@ export function tmdbResultToRecommendation(
     return {
         title: result.title || result.name || 'Unknown',
         year,
+        language: result.original_language,
         mediaType: type,
         tmdbId: result.id,
         overview: result.overview,

@@ -283,6 +283,14 @@ export async function runRecommendationEngine(filters?: EngineFilters): Promise<
                         continue;
                     }
                 }
+                // Language filter
+                if (filters.language && filters.language !== 'all') {
+                    if (!rec.language || rec.language.toLowerCase() !== filters.language.toLowerCase()) {
+                        addLog({ level: 'DEBUG', message: `Filtered out "${rec.title}" — language ${rec.language} doesn't match filter ${filters.language}`, source: 'engine' });
+                        continue;
+                    }
+                }
+
                 // Year range filter
                 if (rec.year) {
                     if (filters.yearMin && rec.year < filters.yearMin) {
