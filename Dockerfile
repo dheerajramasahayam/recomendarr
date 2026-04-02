@@ -1,4 +1,4 @@
-FROM node:20.18-alpine3.21 AS builder
+FROM node:22-alpine AS builder
 
 # Upgrade Alpine packages to fix busybox and zlib vulnerabilities
 # Install python and build tools needed to rebuild SQLite from source for the target platform architecture
@@ -7,7 +7,7 @@ RUN apk update && apk upgrade --no-cache && \
 
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci
+RUN npm ci --fetch-timeout=600000 --fetch-retries=5
 COPY . .
 
 # Force rebuild better-sqlite3 for the target architecture BEFORE Next.js bundles it
@@ -15,7 +15,7 @@ RUN npm rebuild better-sqlite3 --build-from-source
 
 RUN npm run build
 
-FROM node:20.18-alpine3.21 AS runner
+FROM node:22-alpine AS runner
 WORKDIR /app
 
 # Upgrade Alpine packages to fix busybox and zlib vulnerabilities, and install su-exec for entrypoint perms
