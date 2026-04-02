@@ -334,7 +334,7 @@ function HomeContent() {
           <div className="logo-icon">🎬</div>
           <div>
             <h1>Recomendarr</h1>
-            <span className="version-badge">v1.0</span>
+            <span className="version-badge">v2.0</span>
           </div>
         </div>
 
