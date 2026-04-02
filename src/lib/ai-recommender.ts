@@ -15,21 +15,28 @@ function getClient(): OpenAI {
     });
 }
 
-interface AiRecommendation {
-    title: string;
-    year?: number;
-    type: 'movie' | 'series';
-    tmdb_id?: number;
-    reasoning: string;
+export interface TasteProfile {
+    profile: string;
+    keywords: string[];
 }
 
-const SYSTEM_PROMPT = `You are an expert film and television recommendation engine. You analyze a user's watch history and recommend NEW titles they would enjoy.
+const TASTE_PROFILE_PROMPT = `You are a psychological film and television analyst. Analyze the provided watch history (with ratings and play counts) and output a Taste Profile.
+Understand their pacing preferences, thematic interests, preferred genres, and common tropes they enjoy.
+Also, provide 3 highly specific niche keywords (e.g., "cyberpunk", "time loop", "heist") that define their current taste.
+
+Output MUST be a valid JSON object:
+{
+  "profile": "Detailed paragraph explaining the user's taste.",
+  "keywords": ["keyword1", "keyword2", "keyword3"]
+}
+IMPORTANT: Return ONLY the JSON object, no other text or markdown formatting.`;
+
+const SYSTEM_PROMPT = `You are an expert film and television recommendation engine. You receive a user's psychological Taste Profile and their watch history, and recommend NEW titles they would deeply enjoy.
 
 Rules:
 - NEVER recommend titles that are already in the watch history
-- Provide a mix of popular and hidden gems
-- Consider genres, themes, directors, actors, and mood patterns
-- For each recommendation, explain WHY it matches their taste
+- Provide a mix of critically acclaimed blockbusters and high-quality hidden gems
+- Strongly ground your recommendations in the insights from the provided Taste Profile
 - Return results as valid JSON array
 
 Output format (JSON array):
@@ -39,14 +46,64 @@ Output format (JSON array):
     "year": 2024,
     "type": "movie" or "series",
     "tmdb_id": 12345,
-    "reasoning": "Brief explanation of why this matches the user's taste"
+    "reasoning": "Brief explanation connecting the recommendation directly back to elements in their Taste Profile"
   }
 ]
 
-IMPORTANT: Return ONLY the JSON array, no other text.`;
+IMPORTANT: Return ONLY the JSON array, no other text or explanation.`;
+
+export async function generateTasteProfile(watchHistory: WatchedItem[]): Promise<TasteProfile | null> {
+    const config = getConfig();
+    if (!config.ai.enabled || !config.ai.apiKey) return null;
+    const client = getClient();
+    
+    // Pass top 40 for more robust psychological analysis
+    const historyContext = watchHistory.slice(0, 40); 
+    const historyText = historyContext.map((item, i) => {
+        const ratingStr = item.rating ? `, Rating: ${item.rating}/10` : '';
+        const playStr = (item.playCount && item.playCount > 1) ? `, Play Count: ${item.playCount}` : '';
+        return `${i + 1}. "${item.title}" (${item.year || 'N/A'}) - ${item.mediaType} - Genres: ${item.genres?.join(', ') || 'Unknown'}${ratingStr}${playStr}`;
+    }).join('\n');
+
+    const userPrompt = `WATCH HISTORY:\n${historyText}\n\nGenerate the Taste Profile JSON.`;
+    
+    try {
+        const response = await client.chat.completions.create({
+            model: config.ai.model,
+            messages: [
+                { role: 'system', content: TASTE_PROFILE_PROMPT },
+                { role: 'user', content: userPrompt }
+            ],
+            temperature: 0.7,
+            max_tokens: 500,
+        });
+        
+        let content = response.choices[0]?.message?.content?.trim();
+        if (!content) return null;
+        if (content.startsWith('\`\`\`')) { // handle markdown
+            content = content.replace(/^\`\`\`(?:json)?\n?/, '').replace(/\n?\`\`\`$/, '');
+        }
+        
+        const parsed = JSON.parse(content) as TasteProfile;
+        addLog({ level: 'INFO', message: `🤖 AI generated Taste Profile with keywords: ${parsed.keywords.join(', ')}`, source: 'ai' });
+        return parsed;
+    } catch (err) {
+        addLog({ level: 'WARN', message: `Failed to generate Taste Profile: ${(err as Error).message}`, source: 'ai' });
+        return null;
+    }
+}
+
+interface AiRecommendation {
+    title: string;
+    year?: number;
+    type: 'movie' | 'series';
+    tmdb_id?: number;
+    reasoning: string;
+}
 
 export async function getAiRecommendations(
     watchHistory: WatchedItem[],
+    tasteProfile: TasteProfile | null,
     maxRecommendations = 10,
     filters?: { genres?: string[]; language?: string; yearMin?: number; yearMax?: number; mediaType?: 'movie' | 'series' | 'all' }
 ): Promise<Recommendation[]> {
@@ -62,7 +119,9 @@ export async function getAiRecommendations(
     const historyContext = watchHistory.slice(0, 30); // Limit context to avoid token overflow
     const historyText = historyContext.map((item, i) => {
         const genres = item.genres?.join(', ') || 'Unknown';
-        return `${i + 1}. "${item.title}" (${item.year || 'N/A'}) - ${item.mediaType} - Genres: ${genres}`;
+        const ratingStr = item.rating ? `, Rating: ${item.rating}/10` : '';
+        const playStr = (item.playCount && item.playCount > 1) ? `, Play Count: ${item.playCount}` : '';
+        return `${i + 1}. "${item.title}" (${item.year || 'N/A'}) - ${item.mediaType} - Genres: ${genres}${ratingStr}${playStr}`;
     }).join('\n');
 
     // Build filter constraints for the prompt
@@ -102,8 +161,10 @@ export async function getAiRecommendations(
         }
     }
 
-    const userPrompt = `Based on this watch history, recommend ${maxRecommendations} new titles:
+    const profileText = tasteProfile ? `\nUSER TASTE PROFILE:\n${tasteProfile.profile}\n` : '';
 
+    const userPrompt = `Based on this watch history and taste profile, recommend ${maxRecommendations} new titles:
+${profileText}
 WATCH HISTORY:
 ${historyText}${filterInstructions}
 

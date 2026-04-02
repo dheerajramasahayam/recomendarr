@@ -203,10 +203,13 @@ export async function discoverByFilters(
 
     for (const type of types) {
         try {
+            // Use a random page 1-3 to get some variety across different engine runs
+            const randomPage = Math.floor(Math.random() * 3) + 1;
             const params: Record<string, string | number> = {
-                sort_by: 'vote_average.desc',
-                'vote_count.gte': 100,
-                page: 1,
+                sort_by: 'popularity.desc',
+                'vote_average.gte': 7.0,
+                'vote_count.gte': 300,
+                page: randomPage,
             };
 
             if (genreIds.length > 0) {
@@ -246,4 +249,78 @@ export async function discoverByFilters(
     }
 
     return recommendations;
+}
+
+// ============================================
+// Advanced Discovery: Credits & Keywords
+// ============================================
+
+export async function getTmdbCredits(tmdbId: number, type: 'movie' | 'tv'): Promise<any> {
+    try {
+        const res = await getTmdbClient().get(`/${type}/${tmdbId}/credits`);
+        return res.data;
+    } catch {
+        return null;
+    }
+}
+
+export async function searchTmdbKeyword(query: string): Promise<number | null> {
+    try {
+        const res = await getTmdbClient().get('/search/keyword', { params: { query, page: 1 } });
+        if (res.data.results && res.data.results.length > 0) {
+            return res.data.results[0].id;
+        }
+        return null;
+    } catch {
+        return null;
+    }
+}
+
+export async function discoverByKeywords(
+    keywordIds: number[],
+    type: 'movie' | 'series',
+    maxResults = 5
+): Promise<Recommendation[]> {
+    if (keywordIds.length === 0) return [];
+    try {
+        const t = type === 'movie' ? 'movie' : 'tv';
+        const params = {
+            sort_by: 'popularity.desc',
+            'vote_average.gte': 6.0, // lower threshold since keywords are very specific
+            'vote_count.gte': 50,
+            with_keywords: keywordIds.join('|'), // OR logic
+            page: 1,
+        };
+        const res = await getTmdbClient().get(`/discover/${t}`, { params });
+        return (res.data.results || [])
+            .slice(0, maxResults)
+            .map((r: TmdbResult) => tmdbResultToRecommendation(r, type, 'tmdb', 'Dynamic Keyword Search'));
+    } catch (err) {
+        addLog({ level: 'ERROR', message: `TMDb keyword discover failed: ${(err as Error).message}`, source: 'tmdb' });
+        return [];
+    }
+}
+
+export async function discoverByCrew(
+    crewId: number,
+    type: 'movie' | 'series',
+    crewName: string,
+    maxResults = 5
+): Promise<Recommendation[]> {
+    try {
+        const t = type === 'movie' ? 'movie' : 'tv';
+        const params = {
+            sort_by: 'vote_average.desc',
+            'vote_count.gte': 50,
+            with_crew: crewId,
+            page: 1,
+        };
+        const res = await getTmdbClient().get(`/discover/${t}`, { params });
+        return (res.data.results || [])
+            .slice(0, maxResults)
+            .map((r: TmdbResult) => tmdbResultToRecommendation(r, type, 'tmdb', `Creator: ${crewName}`));
+    } catch (err) {
+        addLog({ level: 'ERROR', message: `TMDb crew discover failed: ${(err as Error).message}`, source: 'tmdb' });
+        return [];
+    }
 }

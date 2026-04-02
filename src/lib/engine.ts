@@ -1,6 +1,6 @@
 import { createMediaServerConnector } from './media-server';
-import { getRecommendationsForItem, getTmdbExternalIds, searchTmdb, discoverByFilters } from './tmdb';
-import { getAiRecommendations } from './ai-recommender';
+import { getRecommendationsForItem, getTmdbExternalIds, searchTmdb, discoverByFilters, getTmdbCredits, searchTmdbKeyword, discoverByKeywords, discoverByCrew } from './tmdb';
+import { getAiRecommendations, generateTasteProfile, TasteProfile } from './ai-recommender';
 import { addMovieToRadarr, getAllRadarrMovies } from './radarr';
 import { addSeriesToSonarr, getAllSonarrSeries } from './sonarr';
 import { addRecommendation, addLog, getRecommendations, updateRecommendationStatus } from './database';
@@ -135,7 +135,24 @@ export async function runRecommendationEngine(filters?: EngineFilters): Promise<
             addLog({ level: 'INFO', message: `🔍 Filtered watch history to ${filteredHistory.length} ${filters.mediaType} items`, source: 'engine' });
         }
 
-        for (const item of filteredHistory.slice(0, 10)) {
+        // Smart Sampling: create a diverse mix of highest-rated, rewatched, and recent items
+        const scoredHistory = filteredHistory.map(item => {
+            const ratingScore = item.rating ? item.rating * 2 : 0; // rating usually 0-10, so 0-20 points
+            const playScore = item.playCount ? Math.min(item.playCount, 5) : 0; // up to 5 points
+            const recencyScore = item.lastPlayedDate 
+                ? Math.max(0, 5 - (Date.now() - new Date(item.lastPlayedDate).getTime()) / (1000 * 60 * 60 * 24 * 30)) // up to 5 points (decay over 5 months)
+                : 0;
+            return { item, score: ratingScore + playScore + recencyScore + Math.random() * 2 };
+        });
+        
+        // Sort by score desc to get the most significant items
+        scoredHistory.sort((a, b) => b.score - a.score);
+        
+        // Take top 10 from scored history
+        const sampledItems = scoredHistory.slice(0, 10).map(s => s.item);
+        addLog({ level: 'INFO', message: `🎲 Smart sampled ${sampledItems.length} items to generate baseline recommendations`, source: 'engine' });
+
+        for (const item of sampledItems) {
             try {
                 const recs = await getRecommendationsForItem(item, maxPerItem);
                 allTmdbRecs.push(...recs);
@@ -165,16 +182,58 @@ export async function runRecommendationEngine(filters?: EngineFilters): Promise<
         result.tmdbRecommendations = allTmdbRecs.length;
         addLog({ level: 'INFO', message: `🎯 TMDb found ${allTmdbRecs.length} recommendations`, source: 'engine' });
 
-        // Step 3: Get AI recommendations (with filter context)
+        // Step 2c: Creator Following (Director extraction for Top 2 movies)
+        try {
+            const topMovies = scoredHistory.filter(s => s.item.mediaType === 'movie' && s.item.tmdbId).slice(0, 2);
+            for (const s of topMovies) {
+                const credits = await getTmdbCredits(s.item.tmdbId!, 'movie');
+                if (credits && credits.crew) {
+                    const director = credits.crew.find((c: any) => c.job === 'Director');
+                    if (director) {
+                        addLog({ level: 'INFO', message: `🎬 Creator Following: Discovering works by ${director.name} (from ${s.item.title})`, source: 'engine' });
+                        const directorRecs = await discoverByCrew(director.id, 'movie', director.name, 3);
+                        allTmdbRecs.push(...directorRecs);
+                    }
+                }
+            }
+        } catch (err) {
+            result.errors.push(`Creator following error: ${(err as Error).message}`);
+        }
+
+        // Step 3: Get AI recommendations (with Taste Profile generation)
         let aiRecs: Recommendation[] = [];
+        let tasteProfile: TasteProfile | null = null;
         const aiCfg = getConfig().ai;
         if (aiCfg.enabled) {
             try {
-                aiRecs = await getAiRecommendations(watchHistory, 10, filters);
+                addLog({ level: 'INFO', message: `🧠 Generating Taste Profile...`, source: 'engine' });
+                tasteProfile = await generateTasteProfile(watchHistory);
+                
+                aiRecs = await getAiRecommendations(watchHistory, tasteProfile, 10, filters);
                 result.aiRecommendations = aiRecs.length;
                 addLog({ level: 'INFO', message: `🤖 AI generated ${aiRecs.length} recommendations`, source: 'engine' });
             } catch (err) {
                 result.errors.push(`AI error: ${(err as Error).message}`);
+            }
+        }
+
+        // Step 3b: Dynamic Keyword Discovery
+        if (tasteProfile && tasteProfile.keywords && tasteProfile.keywords.length > 0) {
+            try {
+                addLog({ level: 'INFO', message: `🔍 Running dynamic keyword discovery for: ${tasteProfile.keywords.join(', ')}`, source: 'engine' });
+                const keywordIds: number[] = [];
+                for (const kw of tasteProfile.keywords) {
+                    const id = await searchTmdbKeyword(kw);
+                    if (id) keywordIds.push(id);
+                }
+                if (keywordIds.length > 0) {
+                    const kwMovieRecs = await discoverByKeywords(keywordIds, 'movie', 5);
+                    const kwTvRecs = await discoverByKeywords(keywordIds, 'series', 5);
+                    allTmdbRecs.push(...kwMovieRecs, ...kwTvRecs);
+                    addLog({ level: 'INFO', message: `🔍 Keyword discovery added ${kwMovieRecs.length + kwTvRecs.length} recommendations`, source: 'engine' });
+                }
+            } catch (err) {
+                result.errors.push(`Keyword discovery error: ${(err as Error).message}`);
             }
         }
 
