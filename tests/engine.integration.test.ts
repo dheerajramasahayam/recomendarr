@@ -6,6 +6,27 @@ import * as sonarr from '../src/lib/sonarr';
 import * as tmdb from '../src/lib/tmdb';
 import * as config from '../src/lib/config';
 import * as database from '../src/lib/database';
+import type { AppConfig } from '../src/lib/config';
+import type { MediaServerConnector } from '../src/lib/media-server';
+import type { Recommendation, WatchedItem } from '../src/lib/types';
+
+type SearchTmdbResult = NonNullable<Awaited<ReturnType<typeof tmdb.searchTmdb>>>;
+
+function createMockConnector(watchHistory: WatchedItem[] | Promise<WatchedItem[]>): MediaServerConnector {
+    return {
+        getWatchHistory: vi.fn().mockResolvedValue(watchHistory),
+        testConnection: vi.fn().mockResolvedValue(true),
+        getUsers: vi.fn().mockResolvedValue([]),
+    };
+}
+
+function createRejectingConnector(error: Error): MediaServerConnector {
+    return {
+        getWatchHistory: vi.fn().mockRejectedValue(error),
+        testConnection: vi.fn().mockResolvedValue(false),
+        getUsers: vi.fn().mockResolvedValue([]),
+    };
+}
 
 describe('Engine Integration Tests (Hybrid Mocking)', () => {
 
@@ -13,7 +34,7 @@ describe('Engine Integration Tests (Hybrid Mocking)', () => {
         vi.restoreAllMocks();
     });
 
-    const mockHistory = [
+    const mockHistory: WatchedItem[] = [
         { title: 'The Matrix', year: 1999, mediaType: 'movie', genres: ['Action'], playCount: 5, rating: 10, tmdbId: 603, lastPlayedDate: new Date().toISOString() },
         { title: 'Breaking Bad', year: 2008, mediaType: 'series', genres: ['Drama'], playCount: 1, rating: 9, tmdbId: 1396 }
     ];
@@ -26,30 +47,36 @@ describe('Engine Integration Tests (Hybrid Mocking)', () => {
                 ...realCfg,
                 scheduler: { ...realCfg.scheduler, autoAdd: true },
                 ai: { ...realCfg.ai, enabled: false } // disable AI to save tokens in engine run, already tested above
-            } as any);
+            } as AppConfig);
 
             // Give it fake radarr/sonarr libraries
-            vi.spyOn(radarr, 'getAllRadarrMovies').mockResolvedValue([ { title: 'Existing Movie', tmdbId: 123 } as any ]);
-            vi.spyOn(sonarr, 'getAllSonarrSeries').mockResolvedValue([ { title: 'Existing Series', tvdbId: 456 } as any ]);
+            vi.spyOn(radarr, 'getAllRadarrMovies').mockResolvedValue([{ title: 'Existing Movie', tmdbId: 123 }]);
+            vi.spyOn(sonarr, 'getAllSonarrSeries').mockResolvedValue([{ title: 'Existing Series', tvdbId: 456 }]);
             
             // Give it fake watch history
-            vi.spyOn(mediaServer, 'createMediaServerConnector').mockReturnValue({
-                getWatchHistory: vi.fn().mockResolvedValue(mockHistory) as any,
-                testConnection: vi.fn() as any,
-                getUsers: vi.fn() as any
-            });
+            vi.spyOn(mediaServer, 'createMediaServerConnector').mockReturnValue(createMockConnector(mockHistory));
 
             // Mock database deduplication layers
             vi.spyOn(database, 'addRecommendation').mockImplementation((r) => r);
             vi.spyOn(database, 'updateRecommendationStatus').mockImplementation(() => true);
+            vi.spyOn(database, 'getFeedbackProfile').mockReturnValue({
+                rejectedTitles: [],
+                preferredGenres: [],
+                avoidedGenres: [],
+                preferredMediaTypes: [],
+                avoidedMediaTypes: [],
+                feedbackReasons: {},
+                summary: '',
+            });
 
             // Mock arr additions
             vi.spyOn(radarr, 'addMovieToRadarr').mockResolvedValue({ success: true, message: 'OK' });
             vi.spyOn(sonarr, 'addSeriesToSonarr').mockResolvedValue({ success: true, message: 'OK' });
             
             // Mock TMDb search returning a movie and missing id resolution
-            vi.spyOn(tmdb, 'searchTmdb').mockResolvedValue({ id: 999, overview: 'Yes', release_date: '2023-01-01', poster_path: '/poster.jpg', vote_average: 7, genre_ids: [28] } as any);
-            vi.spyOn(tmdb, 'getTmdbExternalIds').mockResolvedValue({ tvdb_id: 1234 } as any);
+            const searchResult: SearchTmdbResult = { id: 999, overview: 'Yes', release_date: '2023-01-01', poster_path: '/poster.jpg', vote_average: 7, genre_ids: [28] };
+            vi.spyOn(tmdb, 'searchTmdb').mockResolvedValue(searchResult);
+            vi.spyOn(tmdb, 'getTmdbExternalIds').mockResolvedValue({ tvdb_id: 1234 });
         });
 
         it('should successfully execute a full engine run', async () => {
@@ -76,11 +103,7 @@ describe('Engine Integration Tests (Hybrid Mocking)', () => {
         });
 
         it('should skip if watch history is empty', async () => {
-             vi.spyOn(mediaServer, 'createMediaServerConnector').mockReturnValue({
-                getWatchHistory: vi.fn().mockResolvedValue([]) as any,
-                testConnection: vi.fn() as any,
-                getUsers: vi.fn() as any
-            });
+             vi.spyOn(mediaServer, 'createMediaServerConnector').mockReturnValue(createMockConnector([]));
             const result = await runRecommendationEngine();
             expect(result.watchedCount).toBe(0);
             expect(result.totalNew).toBe(0);
@@ -91,11 +114,16 @@ describe('Engine Integration Tests (Hybrid Mocking)', () => {
         beforeEach(() => {
             vi.spyOn(radarr, 'getAllRadarrMovies').mockRejectedValue(new Error('Radarr Down'));
             vi.spyOn(sonarr, 'getAllSonarrSeries').mockRejectedValue(new Error('Sonarr Down'));
-             vi.spyOn(mediaServer, 'createMediaServerConnector').mockReturnValue({
-                getWatchHistory: vi.fn().mockRejectedValue(new Error('Plex Down')) as any,
-                testConnection: vi.fn() as any,
-                getUsers: vi.fn() as any
+            vi.spyOn(database, 'getFeedbackProfile').mockReturnValue({
+                rejectedTitles: [],
+                preferredGenres: [],
+                avoidedGenres: [],
+                preferredMediaTypes: [],
+                avoidedMediaTypes: [],
+                feedbackReasons: {},
+                summary: '',
             });
+             vi.spyOn(mediaServer, 'createMediaServerConnector').mockReturnValue(createRejectingConnector(new Error('Plex Down')));
         });
 
         it('should safely catch library and history fetch errors', async () => {
@@ -111,8 +139,8 @@ describe('Engine Integration Tests (Hybrid Mocking)', () => {
                 { id: '1', title: 'Test Movie', mediaType: 'movie', tmdbId: 100 },
                 { id: '2', title: 'Test Series', mediaType: 'series', tvdbId: 200 },
                 { id: '3', title: 'Missing Series', mediaType: 'series', tmdbId: 300 }, // No tvdb
-                { id: '4', title: 'Bad Type', mediaType: 'unknown' as any }
-            ] as any[]);
+                { id: '4', title: 'Bad Type', mediaType: 'unknown' as never }
+            ] as Recommendation[]);
         });
 
         it('should return error if recommendation not found', async () => {
@@ -122,7 +150,7 @@ describe('Engine Integration Tests (Hybrid Mocking)', () => {
         });
 
         it('should add movie by title via Radarr lookup', async () => {
-            vi.spyOn(radarr, 'lookupMovieByTerm').mockResolvedValue([{ title: 'Test Movie', tmdbId: 100 }] as any);
+            vi.spyOn(radarr, 'lookupMovieByTerm').mockResolvedValue([{ title: 'Test Movie', tmdbId: 100 }]);
             vi.spyOn(radarr, 'addMovieToRadarr').mockResolvedValue({ success: true, message: 'Added Movie!' });
             vi.spyOn(database, 'updateRecommendationStatus').mockImplementation(() => true);
 
@@ -140,7 +168,7 @@ describe('Engine Integration Tests (Hybrid Mocking)', () => {
         });
         
         it('should add series by title via Sonarr lookup', async () => {
-            vi.spyOn(sonarr, 'lookupSeriesByTerm').mockResolvedValue([{ title: 'Test Series', tvdbId: 200 }] as any);
+            vi.spyOn(sonarr, 'lookupSeriesByTerm').mockResolvedValue([{ title: 'Test Series', tvdbId: 200 }]);
             vi.spyOn(sonarr, 'addSeriesToSonarr').mockResolvedValue({ success: true, message: 'Added Series!' });
 
             const res = await approveAndAdd('2');

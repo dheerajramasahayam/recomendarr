@@ -2,7 +2,7 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 import { config } from './config';
-import type { Recommendation, LogEntry } from './types';
+import type { FeedbackProfile, FeedbackReason, Recommendation, LogEntry, MediaType } from './types';
 
 let db: Database.Database | null = null;
 
@@ -49,6 +49,9 @@ function initializeDatabase(db: Database.Database) {
       source TEXT NOT NULL CHECK(source IN ('tmdb', 'ai')),
       ai_reasoning TEXT,
       based_on TEXT,
+      feedback_reason TEXT,
+      feedback_notes TEXT,
+      feedback_at TEXT,
       status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected', 'added')),
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -92,6 +95,15 @@ function initializeDatabase(db: Database.Database) {
     if (!columns.includes('language')) {
         db.exec("ALTER TABLE recommendations ADD COLUMN language TEXT;");
     }
+    if (!columns.includes('feedback_reason')) {
+        db.exec("ALTER TABLE recommendations ADD COLUMN feedback_reason TEXT;");
+    }
+    if (!columns.includes('feedback_notes')) {
+        db.exec("ALTER TABLE recommendations ADD COLUMN feedback_notes TEXT;");
+    }
+    if (!columns.includes('feedback_at')) {
+        db.exec("ALTER TABLE recommendations ADD COLUMN feedback_at TEXT;");
+    }
 }
 
 // ---- Recommendation CRUD ----
@@ -109,8 +121,8 @@ export function addRecommendation(rec: Recommendation): Recommendation {
     }
 
     db.prepare(`
-    INSERT INTO recommendations (id, title, year, language, media_type, tmdb_id, tvdb_id, imdb_id, overview, poster_url, genres, vote_average, source, ai_reasoning, based_on, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO recommendations (id, title, year, language, media_type, tmdb_id, tvdb_id, imdb_id, overview, poster_url, genres, vote_average, source, ai_reasoning, based_on, feedback_reason, feedback_notes, feedback_at, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
         id, rec.title, rec.year || null, rec.language || null, rec.mediaType,
         rec.tmdbId || null, rec.tvdbId || null, rec.imdbId || null,
@@ -118,6 +130,7 @@ export function addRecommendation(rec: Recommendation): Recommendation {
         rec.genres ? JSON.stringify(rec.genres) : null,
         rec.voteAverage || null, rec.source,
         rec.aiReasoning || null, rec.basedOn || null,
+        rec.feedbackReason || null, rec.feedbackNotes || null, rec.feedbackAt || null,
         rec.status
     );
 
@@ -140,11 +153,28 @@ export function getRecommendations(status?: string, limit = 50, offset = 0): Rec
     return rows.map(rowToRecommendation);
 }
 
-export function updateRecommendationStatus(id: string, status: string): boolean {
+export function updateRecommendationStatus(
+    id: string,
+    status: string,
+    feedback?: { reason?: FeedbackReason; notes?: string }
+): boolean {
     const db = getDatabase();
-    const result = db.prepare(
-        "UPDATE recommendations SET status = ?, updated_at = datetime('now') WHERE id = ?"
-    ).run(status, id);
+    let result: Database.RunResult;
+
+    if (status === 'rejected') {
+        result = db.prepare(
+            "UPDATE recommendations SET status = ?, feedback_reason = ?, feedback_notes = ?, feedback_at = datetime('now'), updated_at = datetime('now') WHERE id = ?"
+        ).run(status, feedback?.reason || null, feedback?.notes || null, id);
+    } else if (status === 'pending') {
+        result = db.prepare(
+            "UPDATE recommendations SET status = ?, feedback_reason = NULL, feedback_notes = NULL, feedback_at = NULL, updated_at = datetime('now') WHERE id = ?"
+        ).run(status, id);
+    } else {
+        result = db.prepare(
+            "UPDATE recommendations SET status = ?, updated_at = datetime('now') WHERE id = ?"
+        ).run(status, id);
+    }
+
     return result.changes > 0;
 }
 
@@ -180,8 +210,98 @@ function rowToRecommendation(row: Record<string, unknown>): Recommendation {
         aiReasoning: row.ai_reasoning as string | undefined,
         basedOn: row.based_on as string | undefined,
         status: row.status as 'pending' | 'approved' | 'rejected' | 'added',
+        feedbackReason: row.feedback_reason as FeedbackReason | undefined,
+        feedbackNotes: row.feedback_notes as string | undefined,
+        feedbackAt: row.feedback_at as string | undefined,
         createdAt: row.created_at as string,
         updatedAt: row.updated_at as string,
+    };
+}
+
+function topKeys<T extends string>(counts: Map<T, number>, minCount = 1): T[] {
+    return Array.from(counts.entries())
+        .filter(([, count]) => count >= minCount)
+        .sort((a, b) => b[1] - a[1])
+        .map(([key]) => key);
+}
+
+function pushMediaType(counts: Map<MediaType, number>, mediaType: MediaType) {
+    counts.set(mediaType, (counts.get(mediaType) || 0) + 1);
+}
+
+export function getFeedbackProfile(limit = 200): FeedbackProfile {
+    const db = getDatabase();
+    const rows = db.prepare(`
+        SELECT title, media_type, genres, status, feedback_reason
+        FROM recommendations
+        WHERE status IN ('rejected', 'added')
+        ORDER BY updated_at DESC
+        LIMIT ?
+    `).all(limit) as Array<{
+        title: string;
+        media_type: MediaType;
+        genres: string | null;
+        status: 'rejected' | 'added';
+        feedback_reason: FeedbackReason | null;
+    }>;
+
+    const preferredGenres = new Map<string, number>();
+    const avoidedGenres = new Map<string, number>();
+    const preferredMediaTypes = new Map<MediaType, number>();
+    const avoidedMediaTypes = new Map<MediaType, number>();
+    const feedbackReasons = new Map<FeedbackReason, number>();
+    const rejectedTitles = new Set<string>();
+
+    for (const row of rows) {
+        const genres = row.genres ? (JSON.parse(row.genres) as string[]) : [];
+        if (row.status === 'added') {
+            pushMediaType(preferredMediaTypes, row.media_type);
+            for (const genre of genres) {
+                preferredGenres.set(genre.toLowerCase(), (preferredGenres.get(genre.toLowerCase()) || 0) + 1);
+            }
+            continue;
+        }
+
+        rejectedTitles.add(row.title.toLowerCase());
+        pushMediaType(avoidedMediaTypes, row.media_type);
+        for (const genre of genres) {
+            avoidedGenres.set(genre.toLowerCase(), (avoidedGenres.get(genre.toLowerCase()) || 0) + 1);
+        }
+        if (row.feedback_reason) {
+            feedbackReasons.set(row.feedback_reason, (feedbackReasons.get(row.feedback_reason) || 0) + 1);
+        }
+    }
+
+    const feedbackReasonRecord: Partial<Record<FeedbackReason, number>> = {};
+    for (const [reason, count] of feedbackReasons.entries()) {
+        feedbackReasonRecord[reason] = count;
+    }
+
+    const preferredGenreList = topKeys(preferredGenres, 2);
+    const avoidedGenreList = topKeys(avoidedGenres, 2);
+    const preferredMediaTypeList = topKeys(preferredMediaTypes, 2);
+    const avoidedMediaTypeList = topKeys(avoidedMediaTypes, 2);
+
+    const summaryParts: string[] = [];
+    if (preferredGenreList.length > 0) {
+        summaryParts.push(`Positive feedback is strongest for ${preferredGenreList.slice(0, 3).join(', ')}.`);
+    }
+    if (avoidedGenreList.length > 0) {
+        summaryParts.push(`Repeated rejection signal exists for ${avoidedGenreList.slice(0, 3).join(', ')}.`);
+    }
+    const dominantReason = Object.entries(feedbackReasonRecord).sort((a, b) => (b[1] || 0) - (a[1] || 0))[0];
+    if (dominantReason) {
+        summaryParts.push(`Most common rejection reason is ${dominantReason[0].replaceAll('_', ' ')}.`);
+    }
+
+    return {
+        rejectedTitles: Array.from(rejectedTitles),
+        preferredGenres: preferredGenreList,
+        avoidedGenres: avoidedGenreList,
+        preferredMediaTypes: preferredMediaTypeList,
+        avoidedMediaTypes: avoidedMediaTypeList,
+        feedbackReasons: feedbackReasonRecord,
+        summary: summaryParts.join(' '),
     };
 }
 

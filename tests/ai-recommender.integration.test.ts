@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { generateTasteProfile, getAiRecommendations, testAiConnection } from '../src/lib/ai-recommender';
 import * as config from '../src/lib/config';
+import type { AppConfig } from '../src/lib/config';
+import type { WatchedItem } from '../src/lib/types';
 
 describe('AI Recommender Live Integration Tests', () => {
 
@@ -8,7 +10,7 @@ describe('AI Recommender Live Integration Tests', () => {
         vi.restoreAllMocks();
     });
 
-    const history: any[] = [
+    const history: WatchedItem[] = [
         { title: 'The Matrix', year: 1999, mediaType: 'movie', genres: ['Action', 'Sci-Fi'], playCount: 5, rating: 10 },
         { title: 'Blade Runner 2049', year: 2017, mediaType: 'movie', genres: ['Sci-Fi', 'Thriller'], playCount: 2, rating: 9 }
     ];
@@ -73,7 +75,7 @@ describe('AI Recommender Live Integration Tests', () => {
              vi.spyOn(config, 'getConfig').mockReturnValue({
                  ...realConfig,
                  ai: { ...realConfig.ai, providerUrl: 'http://localhost:59999/invalid', enabled: true }
-             } as any);
+             } as AppConfig);
          });
 
          it('should fail gracefully in testAiConnection on 401', async () => {
@@ -98,7 +100,7 @@ describe('AI Recommender Live Integration Tests', () => {
              vi.spyOn(config, 'getConfig').mockReturnValue({
                  ...realConfig,
                  ai: { ...realConfig.ai, enabled: false }
-             } as any);
+             } as AppConfig);
          });
 
          it('should return false in testAiConnection if disabled', async () => {

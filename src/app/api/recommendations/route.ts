@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getRecommendations, updateRecommendationStatus, getRecommendationCounts } from '@/lib/database';
 import { approveAndAdd } from '@/lib/engine';
+import type { FeedbackReason } from '@/lib/types';
 
 export async function GET(request: Request) {
     try {
@@ -41,7 +42,10 @@ export async function PATCH(request: Request) {
             const result = await approveAndAdd(id, options);
             return NextResponse.json(result);
         } else if (action === 'reject') {
-            updateRecommendationStatus(id, 'rejected');
+            updateRecommendationStatus(id, 'rejected', {
+                reason: body.feedbackReason as FeedbackReason | undefined,
+                notes: body.feedbackNotes as string | undefined,
+            });
             return NextResponse.json({ success: true, message: 'Recommendation rejected' });
         } else if (action === 'pending') {
             updateRecommendationStatus(id, 'pending');

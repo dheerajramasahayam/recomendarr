@@ -12,6 +12,7 @@ import {
     getRecommendationsForItem
 } from '../src/lib/tmdb';
 import * as config from '../src/lib/config';
+import type { AppConfig } from '../src/lib/config';
 
 // INCREASE TIMEOUT for real API calls
 describe('TMDb Live Integration Tests', () => {
@@ -54,7 +55,7 @@ describe('TMDb Live Integration Tests', () => {
             // Interstellar ID = 157336. Chris Nolan directing.
             const credits = await getTmdbCredits(157336, 'movie');
             expect(credits).toBeDefined();
-            const director = credits?.crew.find((c: any) => c.job === 'Director');
+            const director = credits?.crew?.find((c) => c.job === 'Director');
             if (director) {
                 const works = await discoverByCrew(director.id, 'movie', director.name, 3);
                 expect(Array.isArray(works)).toBe(true);
@@ -95,7 +96,7 @@ describe('TMDb Live Integration Tests', () => {
              vi.spyOn(config, 'getConfig').mockReturnValue({
                  ...realConfig,
                  tmdb: { ...realConfig.tmdb, baseUrl: 'http://localhost:59999/invalid' }
-             } as any);
+             } as AppConfig);
         });
 
         it('should trigger catch block in searchTmdb', async () => {

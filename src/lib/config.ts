@@ -72,7 +72,28 @@ function loadSettings(): Record<string, string> {
 // Helper: DB setting → env var → default
 function get(key: string, envKey: string, defaultValue: string): string {
   const settings = loadSettings();
-  return settings[key] || process.env[envKey] || defaultValue;
+  if (Object.prototype.hasOwnProperty.call(settings, key)) {
+    return settings[key];
+  }
+  if (process.env[envKey] !== undefined) {
+    return process.env[envKey] as string;
+  }
+  return defaultValue;
+}
+
+function parseBoolean(value: string | undefined, fallback: boolean): boolean {
+  if (value === undefined) return fallback;
+  return value === 'true';
+}
+
+function parseInteger(value: string | undefined, fallback: number): number {
+  if (value === undefined || value === '') return fallback;
+  const parsed = parseInt(value, 10);
+  return Number.isNaN(parsed) ? fallback : parsed;
+}
+
+function withFallback(value: string | undefined, fallback: string): string {
+  return value === undefined ? fallback : value;
 }
 
 export function clearSettingsCache(): void {
@@ -156,8 +177,19 @@ export function getConfig() {
       model: get('ai_model', 'AI_MODEL', 'gpt-4o'),
     },
     scheduler: {
-      cronSchedule: get('cron_schedule', 'CRON_SCHEDULE', '0 3 * * *'),
+      enabled: get('scheduler_enabled', 'SCHEDULER_ENABLED', 'true') === 'true',
+      cronSchedule: get('cron_schedule', 'CRON_SCHEDULE', '0 0,8,16 * * *'),
       autoAdd: get('auto_add', 'AUTO_ADD', 'false') === 'true',
+    },
+    notifications: {
+      discordEnabled: get('discord_enabled', 'DISCORD_ENABLED', 'false') === 'true',
+      discordWebhookUrl: get('discord_webhook_url', 'DISCORD_WEBHOOK_URL', ''),
+      telegramEnabled: get('telegram_enabled', 'TELEGRAM_ENABLED', 'false') === 'true',
+      telegramBotToken: get('telegram_bot_token', 'TELEGRAM_BOT_TOKEN', ''),
+      telegramChatId: get('telegram_chat_id', 'TELEGRAM_CHAT_ID', ''),
+      notifyOnRunComplete: get('notify_on_run_complete', 'NOTIFY_ON_RUN_COMPLETE', 'true') === 'true',
+      notifyOnNewRecommendations: get('notify_on_new_recommendations', 'NOTIFY_ON_NEW_RECOMMENDATIONS', 'true') === 'true',
+      notifyOnErrors: get('notify_on_errors', 'NOTIFY_ON_ERRORS', 'true') === 'true',
     },
     database: {
       path: DB_PATH,
@@ -165,6 +197,67 @@ export function getConfig() {
     app: {
       maxRecommendationsPerRun: parseInt(get('max_recommendations', 'MAX_RECOMMENDATIONS_PER_RUN', '20'), 10),
       watchHistoryLimit: parseInt(get('watch_history_limit', 'WATCH_HISTORY_LIMIT', '50'), 10),
+    },
+  };
+}
+
+export type AppConfig = ReturnType<typeof getConfig>;
+
+export function getConfigWithOverrides(overrides: Record<string, string> = {}): AppConfig {
+  const config = getConfig();
+
+  return {
+    ...config,
+    mediaServer: {
+      ...config.mediaServer,
+      type: withFallback(overrides.media_server_type, config.mediaServer.type) as 'jellyfin' | 'plex' | 'emby',
+      url: withFallback(overrides.media_server_url, config.mediaServer.url),
+      apiKey: withFallback(overrides.media_server_api_key, config.mediaServer.apiKey),
+      userId: withFallback(overrides.media_server_user_id, config.mediaServer.userId),
+      plexToken: withFallback(overrides.plex_token, config.mediaServer.plexToken || config.mediaServer.apiKey),
+    },
+    sonarr: {
+      ...config.sonarr,
+      url: withFallback(overrides.sonarr_url, config.sonarr.url),
+      apiKey: withFallback(overrides.sonarr_api_key, config.sonarr.apiKey),
+      qualityProfileId: parseInteger(overrides.sonarr_quality_profile_id, config.sonarr.qualityProfileId),
+      rootFolder: withFallback(overrides.sonarr_root_folder, config.sonarr.rootFolder),
+    },
+    radarr: {
+      ...config.radarr,
+      url: withFallback(overrides.radarr_url, config.radarr.url),
+      apiKey: withFallback(overrides.radarr_api_key, config.radarr.apiKey),
+      qualityProfileId: parseInteger(overrides.radarr_quality_profile_id, config.radarr.qualityProfileId),
+      rootFolder: withFallback(overrides.radarr_root_folder, config.radarr.rootFolder),
+    },
+    ai: {
+      ...config.ai,
+      enabled: parseBoolean(overrides.ai_enabled, config.ai.enabled),
+      providerUrl: withFallback(overrides.ai_provider_url, config.ai.providerUrl),
+      apiKey: withFallback(overrides.ai_api_key, config.ai.apiKey),
+      model: withFallback(overrides.ai_model, config.ai.model),
+    },
+    scheduler: {
+      ...config.scheduler,
+      enabled: parseBoolean(overrides.scheduler_enabled, config.scheduler.enabled),
+      cronSchedule: withFallback(overrides.cron_schedule, config.scheduler.cronSchedule),
+      autoAdd: parseBoolean(overrides.auto_add, config.scheduler.autoAdd),
+    },
+    notifications: {
+      ...config.notifications,
+      discordEnabled: parseBoolean(overrides.discord_enabled, config.notifications.discordEnabled),
+      discordWebhookUrl: withFallback(overrides.discord_webhook_url, config.notifications.discordWebhookUrl),
+      telegramEnabled: parseBoolean(overrides.telegram_enabled, config.notifications.telegramEnabled),
+      telegramBotToken: withFallback(overrides.telegram_bot_token, config.notifications.telegramBotToken),
+      telegramChatId: withFallback(overrides.telegram_chat_id, config.notifications.telegramChatId),
+      notifyOnRunComplete: parseBoolean(overrides.notify_on_run_complete, config.notifications.notifyOnRunComplete),
+      notifyOnNewRecommendations: parseBoolean(overrides.notify_on_new_recommendations, config.notifications.notifyOnNewRecommendations),
+      notifyOnErrors: parseBoolean(overrides.notify_on_errors, config.notifications.notifyOnErrors),
+    },
+    app: {
+      ...config.app,
+      maxRecommendationsPerRun: parseInteger(overrides.max_recommendations, config.app.maxRecommendationsPerRun),
+      watchHistoryLimit: parseInteger(overrides.watch_history_limit, config.app.watchHistoryLimit),
     },
   };
 }

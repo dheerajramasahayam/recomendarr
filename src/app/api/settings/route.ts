@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAllSavedSettings, saveSettings, isSetupComplete, getConfig } from '@/lib/config';
+import { getSchedulerSnapshot, syncRecommendationScheduler } from '@/lib/scheduler';
+import cron from 'node-cron';
 
 // GET /api/settings — returns current config and setup status
 export async function GET() {
@@ -7,6 +9,7 @@ export async function GET() {
         const config = getConfig();
         const savedSettings = getAllSavedSettings();
         const setupComplete = isSetupComplete();
+        const schedulerSnapshot = getSchedulerSnapshot();
 
         return NextResponse.json({
             setupComplete,
@@ -34,6 +37,23 @@ export async function GET() {
                     hasApiKey: !!config.ai.apiKey,
                     model: config.ai.model,
                 },
+                scheduler: {
+                    enabled: config.scheduler.enabled,
+                    cronSchedule: config.scheduler.cronSchedule,
+                    autoAdd: config.scheduler.autoAdd,
+                    nextRun: schedulerSnapshot.nextRun,
+                    active: schedulerSnapshot.active,
+                },
+                notifications: {
+                    discordEnabled: config.notifications.discordEnabled,
+                    hasDiscordWebhook: !!config.notifications.discordWebhookUrl,
+                    telegramEnabled: config.notifications.telegramEnabled,
+                    hasTelegramBotToken: !!config.notifications.telegramBotToken,
+                    hasTelegramChatId: !!config.notifications.telegramChatId,
+                    notifyOnRunComplete: config.notifications.notifyOnRunComplete,
+                    notifyOnNewRecommendations: config.notifications.notifyOnNewRecommendations,
+                    notifyOnErrors: config.notifications.notifyOnErrors,
+                },
             },
             raw: savedSettings,
         });
@@ -52,17 +72,22 @@ export async function PUT(request: NextRequest) {
             return NextResponse.json({ error: 'settings object required' }, { status: 400 });
         }
 
-        // Filter out empty values — don't save blanks
-        const filtered: Record<string, string> = {};
+        const normalized: Record<string, string> = {};
         for (const [key, value] of Object.entries(settings)) {
-            if (value !== undefined && value !== null && String(value).trim() !== '') {
-                filtered[key] = String(value);
+            if (value !== undefined && value !== null) {
+                normalized[key] = String(value);
             }
         }
 
-        saveSettings(filtered);
+        const schedulerEnabled = normalized.scheduler_enabled === 'true';
+        if (schedulerEnabled && normalized.cron_schedule && !cron.validate(normalized.cron_schedule)) {
+            return NextResponse.json({ error: 'Invalid cron schedule' }, { status: 400 });
+        }
 
-        return NextResponse.json({ success: true, saved: Object.keys(filtered).length });
+        saveSettings(normalized);
+        syncRecommendationScheduler();
+
+        return NextResponse.json({ success: true, saved: Object.keys(normalized).length });
     } catch (err) {
         return NextResponse.json({ error: (err as Error).message }, { status: 500 });
     }

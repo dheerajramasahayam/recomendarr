@@ -3,9 +3,10 @@ import { getRecommendationsForItem, getTmdbExternalIds, searchTmdb, discoverByFi
 import { getAiRecommendations, generateTasteProfile, TasteProfile } from './ai-recommender';
 import { addMovieToRadarr, getAllRadarrMovies } from './radarr';
 import { addSeriesToSonarr, getAllSonarrSeries } from './sonarr';
-import { addRecommendation, addLog, getRecommendations, updateRecommendationStatus } from './database';
+import { addRecommendation, addLog, getFeedbackProfile, getRecommendations, updateRecommendationStatus } from './database';
 import { getConfig } from './config';
-import type { Recommendation, WatchedItem } from './types';
+import { notifyRunResult } from './notifications';
+import type { FeedbackProfile, Recommendation, WatchedItem } from './types';
 
 export interface EngineFilters {
     genres?: string[];
@@ -13,12 +14,9 @@ export interface EngineFilters {
     yearMin?: number;
     yearMax?: number;
     mediaType?: 'movie' | 'series' | 'all';
-}
-
-interface LibraryItem {
-    tmdbId?: number;
-    tvdbId?: number;
-    title: string;
+    vibePrompt?: string;
+    minRating?: number;
+    providers?: number[];
 }
 
 interface LibrarySets {
@@ -44,11 +42,41 @@ export interface RunResult {
 
 let isRunning = false;
 
+function scoreRecommendation(rec: Recommendation, feedbackProfile: FeedbackProfile): number {
+    let score = rec.voteAverage ? rec.voteAverage / 10 : 0;
+
+    if (rec.source === 'ai') score += 0.4;
+
+    const recGenres = (rec.genres || []).map((genre) => genre.toLowerCase());
+    for (const genre of feedbackProfile.preferredGenres) {
+        if (recGenres.includes(genre)) score += 1.25;
+    }
+    for (const genre of feedbackProfile.avoidedGenres) {
+        if (recGenres.includes(genre)) score -= 1.5;
+    }
+
+    if (feedbackProfile.preferredMediaTypes.includes(rec.mediaType)) score += 0.75;
+    if (feedbackProfile.avoidedMediaTypes.includes(rec.mediaType)) score -= 1.0;
+
+    if (rec.year && feedbackProfile.feedbackReasons.too_old && rec.year < 2005) {
+        score -= Math.min(2, feedbackProfile.feedbackReasons.too_old * 0.4);
+    }
+
+    if (feedbackProfile.rejectedTitles.includes(rec.title.toLowerCase())) {
+        score -= 100;
+    }
+
+    return score;
+}
+
 export function getIsRunning(): boolean {
     return isRunning;
 }
 
-export async function runRecommendationEngine(filters?: EngineFilters): Promise<RunResult> {
+export async function runRecommendationEngine(
+    filters?: EngineFilters,
+    source: 'manual' | 'scheduled' = 'manual'
+): Promise<RunResult> {
     if (isRunning) {
         throw new Error('Recommendation engine is already running');
     }
@@ -64,7 +92,12 @@ export async function runRecommendationEngine(filters?: EngineFilters): Promise<
     };
 
     try {
-        addLog({ level: 'INFO', message: '🚀 Starting recommendation engine run', source: 'engine' });
+        addLog({
+            level: 'INFO',
+            message: `🚀 Starting recommendation engine run (${source})`,
+            source: 'engine',
+            details: JSON.stringify({ event: 'run_start', source }),
+        });
 
         // Step 0: Pre-fetch full Sonarr & Radarr libraries for duplicate checking
         const library: LibrarySets = {
@@ -171,6 +204,8 @@ export async function runRecommendationEngine(filters?: EngineFilters): Promise<
                     yearMin: filters.yearMin,
                     yearMax: filters.yearMax,
                     mediaType: filters.mediaType,
+                    minRating: filters.minRating,
+                    providers: filters.providers,
                 }, cfg.app.maxRecommendationsPerRun);
                 allTmdbRecs.push(...discoverRecs);
                 addLog({ level: 'INFO', message: `🔍 Filter discovery added ${discoverRecs.length} recommendations`, source: 'engine' });
@@ -188,7 +223,7 @@ export async function runRecommendationEngine(filters?: EngineFilters): Promise<
             for (const s of topMovies) {
                 const credits = await getTmdbCredits(s.item.tmdbId!, 'movie');
                 if (credits && credits.crew) {
-                    const director = credits.crew.find((c: any) => c.job === 'Director');
+                    const director = credits.crew.find((crewMember) => crewMember.job === 'Director');
                     if (director) {
                         addLog({ level: 'INFO', message: `🎬 Creator Following: Discovering works by ${director.name} (from ${s.item.title})`, source: 'engine' });
                         const directorRecs = await discoverByCrew(director.id, 'movie', director.name, 3);
@@ -200,6 +235,8 @@ export async function runRecommendationEngine(filters?: EngineFilters): Promise<
             result.errors.push(`Creator following error: ${(err as Error).message}`);
         }
 
+        const feedbackProfile = getFeedbackProfile();
+
         // Step 3: Get AI recommendations (with Taste Profile generation)
         let aiRecs: Recommendation[] = [];
         let tasteProfile: TasteProfile | null = null;
@@ -209,7 +246,9 @@ export async function runRecommendationEngine(filters?: EngineFilters): Promise<
                 addLog({ level: 'INFO', message: `🧠 Generating Taste Profile...`, source: 'engine' });
                 tasteProfile = await generateTasteProfile(watchHistory);
                 
-                aiRecs = await getAiRecommendations(watchHistory, tasteProfile, 10, filters);
+                const rejectedTitles = feedbackProfile.rejectedTitles;
+
+                aiRecs = await getAiRecommendations(watchHistory, tasteProfile, 10, filters, rejectedTitles, feedbackProfile);
                 result.aiRecommendations = aiRecs.length;
                 addLog({ level: 'INFO', message: `🤖 AI generated ${aiRecs.length} recommendations`, source: 'engine' });
             } catch (err) {
@@ -238,7 +277,8 @@ export async function runRecommendationEngine(filters?: EngineFilters): Promise<
         }
 
         // Step 4: Merge, deduplicate, and save
-        const allRecs = [...allTmdbRecs, ...aiRecs];
+        const allRecs = [...allTmdbRecs, ...aiRecs]
+            .toSorted((a, b) => scoreRecommendation(b, feedbackProfile) - scoreRecommendation(a, feedbackProfile));
         const seen = new Set<string>();
         const uniqueRecs: Recommendation[] = [];
 
@@ -326,6 +366,9 @@ export async function runRecommendationEngine(filters?: EngineFilters): Promise<
             if (library.watchedTitles.has(titleLower)) {
                 alreadyExists = true;
             }
+            if (feedbackProfile.rejectedTitles.includes(titleLower)) {
+                alreadyExists = true;
+            }
 
             if (alreadyExists) {
                 addLog({ level: 'DEBUG', message: `Skipping "${rec.title}" — already in library or watched`, source: 'engine' });
@@ -343,9 +386,8 @@ export async function runRecommendationEngine(filters?: EngineFilters): Promise<
                         continue;
                     }
                 }
-                // Language filter
                 if (filters.language && filters.language !== 'all') {
-                    if (!rec.language || rec.language.toLowerCase() !== filters.language.toLowerCase()) {
+                    if (rec.source === 'tmdb' && (!rec.language || rec.language.toLowerCase() !== filters.language.toLowerCase())) {
                         addLog({ level: 'DEBUG', message: `Filtered out "${rec.title}" — language ${rec.language} doesn't match filter ${filters.language}`, source: 'engine' });
                         continue;
                     }
@@ -404,9 +446,18 @@ export async function runRecommendationEngine(filters?: EngineFilters): Promise<
 
         addLog({
             level: 'INFO',
-            message: `✅ Run complete: ${result.totalNew} new recommendations, ${result.addedToArr} added`,
+            message: `✅ Run complete (${source}): ${result.totalNew} new recommendations, ${result.addedToArr} added`,
             source: 'engine',
+            details: JSON.stringify({
+                event: 'run_complete',
+                source,
+                totalNew: result.totalNew,
+                addedToArr: result.addedToArr,
+                errors: result.errors.length,
+            }),
         });
+
+        await notifyRunResult(result, source);
 
         return result;
     } finally {

@@ -1,17 +1,18 @@
 import OpenAI from 'openai';
-import { getConfig } from './config';
+import { getConfig, type AppConfig } from './config';
 import { addLog } from './database';
-import type { Recommendation, WatchedItem } from './types';
+import type { FeedbackProfile, Recommendation, WatchedItem } from './types';
 
 // ============================================
 // AI Recommendation Service (OpenAI-compatible)
 // ============================================
 
-function getClient(): OpenAI {
+function getClient(override?: AppConfig['ai']): OpenAI {
     const config = getConfig();
+    const ai = override || config.ai;
     return new OpenAI({
-        apiKey: config.ai.apiKey,
-        baseURL: config.ai.providerUrl,
+        apiKey: ai.apiKey,
+        baseURL: ai.providerUrl,
     });
 }
 
@@ -105,7 +106,9 @@ export async function getAiRecommendations(
     watchHistory: WatchedItem[],
     tasteProfile: TasteProfile | null,
     maxRecommendations = 10,
-    filters?: { genres?: string[]; language?: string; yearMin?: number; yearMax?: number; mediaType?: 'movie' | 'series' | 'all' }
+    filters?: { genres?: string[]; language?: string; yearMin?: number; yearMax?: number; mediaType?: 'movie' | 'series' | 'all'; vibePrompt?: string; minRating?: number; providers?: number[] },
+    rejectedTitles: string[] = [],
+    feedbackProfile?: FeedbackProfile
 ): Promise<Recommendation[]> {
     const config = getConfig();
     if (!config.ai.enabled || !config.ai.apiKey) {
@@ -156,15 +159,33 @@ export async function getAiRecommendations(
         } else if (filters.mediaType === 'series') {
             constraints.push('Recommend ONLY TV series, no movies');
         }
+        if (filters.minRating && filters.minRating > 0) {
+            constraints.push(`CRITICAL MUST: Absolutely DO NOT recommend any title that would have an IMDB/TMDb score lower than ${filters.minRating}/10. High quality only.`);
+        }
+        if (filters.vibePrompt && filters.vibePrompt.trim().length > 0) {
+            constraints.push(`CRITICAL USER MOOD/VIBE OVERRIDE: The user specifically requested this exact vibe/mood for the recommendations: "${filters.vibePrompt.trim()}". Prioritize this vibe immediately.`);
+        }
+        
+        if (rejectedTitles && rejectedTitles.length > 0) {
+            constraints.push(`CRITICAL MUST NOT REC REJECTED: The user explicitly rejected the following titles recently. Absolutely DO NOT recommend these exact titles, and aggressively penalize/avoid recommending anything too heavily associated manually or structurally with them: ${rejectedTitles.slice(0, 50).join(', ')}`);
+        }
+
         if (constraints.length > 0) {
             filterInstructions = `\n\nIMPORTANT FILTER CONSTRAINTS:\n${constraints.map(c => `- ${c}`).join('\n')}`;
         }
+    } else if (rejectedTitles && rejectedTitles.length > 0) {
+        // Fallback constraint if filters object is null but rejected titles exist
+        filterInstructions = `\n\nIMPORTANT FILTER CONSTRAINTS:\n- CRITICAL MUST NOT REC REJECTED: The user explicitly rejected the following titles recently. Absolutely DO NOT recommend these precise titles, and avoid recommending anything too heavily associated with them: ${rejectedTitles.slice(0, 50).join(', ')}`;
     }
 
     const profileText = tasteProfile ? `\nUSER TASTE PROFILE:\n${tasteProfile.profile}\n` : '';
+    const feedbackText = feedbackProfile
+        ? `\nUSER FEEDBACK SIGNALS:\n- Summary: ${feedbackProfile.summary || 'No strong feedback signals yet.'}\n- Preferred genres: ${feedbackProfile.preferredGenres.join(', ') || 'None yet'}\n- Avoided genres: ${feedbackProfile.avoidedGenres.join(', ') || 'None yet'}\n- Preferred media types: ${feedbackProfile.preferredMediaTypes.join(', ') || 'None yet'}\n- Avoided media types: ${feedbackProfile.avoidedMediaTypes.join(', ') || 'None yet'}\n`
+        : '';
 
     const userPrompt = `Based on this watch history and taste profile, recommend ${maxRecommendations} new titles:
 ${profileText}
+${feedbackText}
 WATCH HISTORY:
 ${historyText}${filterInstructions}
 
@@ -225,13 +246,14 @@ ${filterInstructions ? 'Follow the filter constraints strictly.' : 'Recommend a 
     }
 }
 
-export async function testAiConnection(): Promise<boolean> {
+export async function testAiConnection(override?: AppConfig['ai']): Promise<boolean> {
     const config = getConfig();
-    if (!config.ai.enabled || !config.ai.apiKey) return false;
+    const ai = override || config.ai;
+    if (!ai.enabled || !ai.apiKey) return false;
     try {
-        const client = getClient();
+        const client = getClient(ai);
         await client.chat.completions.create({
-            model: config.ai.model,
+            model: ai.model,
             messages: [{ role: 'user', content: 'Say "ok"' }],
             max_tokens: 5,
         });

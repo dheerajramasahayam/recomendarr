@@ -28,6 +28,14 @@ interface TmdbResult {
     vote_average: number;
 }
 
+interface TmdbCredits {
+    crew?: Array<{
+        id: number;
+        job?: string;
+        name: string;
+    }>;
+}
+
 // Genre ID map (TMDb standard)
 const GENRE_MAP: Record<number, string> = {
     28: 'Action', 12: 'Adventure', 16: 'Animation', 35: 'Comedy',
@@ -87,6 +95,19 @@ export async function getTmdbExternalIds(tmdbId: number, type: 'movie' | 'tv'): 
         };
     } catch {
         return {};
+    }
+}
+
+export async function getMediaTrailer(tmdbId: number, type: 'movie' | 'tv' | 'series'): Promise<string | null> {
+    try {
+        const tmdbType = type === 'series' ? 'tv' : type;
+        const res = await getTmdbClient().get(`/${tmdbType}/${tmdbId}/videos`);
+        const videos: { key: string; site: string; type: string }[] = res.data.results || [];
+        const trailer = videos.find(v => v.site === 'YouTube' && v.type === 'Trailer');
+        return trailer ? trailer.key : null;
+    } catch {
+        addLog({ level: 'DEBUG', message: `No trailer found for ${type} ${tmdbId}`, source: 'tmdb' });
+        return null;
     }
 }
 
@@ -179,6 +200,8 @@ export interface DiscoverFilters {
     yearMin?: number;
     yearMax?: number;
     mediaType?: 'movie' | 'series' | 'all';
+    minRating?: number;
+    providers?: number[];
 }
 
 export async function discoverByFilters(
@@ -207,10 +230,15 @@ export async function discoverByFilters(
             const randomPage = Math.floor(Math.random() * 3) + 1;
             const params: Record<string, string | number> = {
                 sort_by: 'popularity.desc',
-                'vote_average.gte': 7.0,
+                'vote_average.gte': filters.minRating || 7.0,
                 'vote_count.gte': 300,
                 page: randomPage,
             };
+
+            if (filters.providers && filters.providers.length > 0) {
+                params.with_watch_providers = filters.providers.join('|');
+                params.watch_region = 'US'; // TMDb requires region when filtering by providers
+            }
 
             if (genreIds.length > 0) {
                 params.with_genres = genreIds.join(',');
@@ -255,7 +283,7 @@ export async function discoverByFilters(
 // Advanced Discovery: Credits & Keywords
 // ============================================
 
-export async function getTmdbCredits(tmdbId: number, type: 'movie' | 'tv'): Promise<any> {
+export async function getTmdbCredits(tmdbId: number, type: 'movie' | 'tv'): Promise<TmdbCredits | null> {
     try {
         const res = await getTmdbClient().get(`/${type}/${tmdbId}/credits`);
         return res.data;

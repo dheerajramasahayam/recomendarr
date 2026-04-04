@@ -1,5 +1,5 @@
 import axios, { AxiosInstance } from 'axios';
-import { getConfig } from './config';
+import { getConfig, type AppConfig } from './config';
 import { addLog } from './database';
 import type { QualityProfile, RootFolder } from './types';
 
@@ -7,20 +7,21 @@ import type { QualityProfile, RootFolder } from './types';
 // Radarr Service — Add/Manage Movies
 // ============================================
 
-function getClient(): AxiosInstance {
+function getClient(override?: AppConfig['radarr']): AxiosInstance {
     const config = getConfig();
+    const radarr = override || config.radarr;
     return axios.create({
-        baseURL: config.radarr.url,
+        baseURL: radarr.url,
         headers: {
-            'X-Api-Key': config.radarr.apiKey,
+            'X-Api-Key': radarr.apiKey,
             'Content-Type': 'application/json',
         },
     });
 }
 
-export async function testRadarrConnection(): Promise<boolean> {
+export async function testRadarrConnection(override?: AppConfig['radarr']): Promise<boolean> {
     try {
-        const client = getClient();
+        const client = getClient(override);
         const res = await client.get('/api/v3/system/status');
         addLog({ level: 'INFO', message: `Connected to Radarr v${res.data.version}`, source: 'radarr' });
         return true;
@@ -30,14 +31,14 @@ export async function testRadarrConnection(): Promise<boolean> {
     }
 }
 
-export async function getRadarrQualityProfiles(): Promise<QualityProfile[]> {
-    const client = getClient();
+export async function getRadarrQualityProfiles(override?: AppConfig['radarr']): Promise<QualityProfile[]> {
+    const client = getClient(override);
     const res = await client.get('/api/v3/qualityprofile');
     return res.data.map((p: { id: number; name: string }) => ({ id: p.id, name: p.name }));
 }
 
-export async function getRadarrRootFolders(): Promise<RootFolder[]> {
-    const client = getClient();
+export async function getRadarrRootFolders(override?: AppConfig['radarr']): Promise<RootFolder[]> {
+    const client = getClient(override);
     const res = await client.get('/api/v3/rootfolder');
     return res.data.map((f: { id: number; path: string; freeSpace: number }) => ({
         id: f.id,

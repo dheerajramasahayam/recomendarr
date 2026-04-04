@@ -15,7 +15,7 @@
 - **Automated Discovery**: Analyzes your watch history from **Plex**, **Jellyfin**, or **Emby**.
 - **Dual Recommendation Engines**: Uses both **TMDb** for related content and **OpenAI** (or compatible LLMs) for deep, personalized AI recommendations.
 - **Direct Integration**: Adds approved media straight into Radarr and Sonarr—no Jellyseerr or Overseerr required.
-- **Guided Setup Wizard**: A seamless, 4-step first-run onboarding UI to connect all your services in minutes.
+- **Guided Setup Wizard**: A discovery-first, 5-step onboarding UI with a final review screen to connect all your services in minutes.
 - **UI-Driven Configuration**: No complex `.env` files to manage. Settings are editable from a beautiful web interface and persisted in a lightweight SQLite database.
 
 ---
@@ -74,7 +74,7 @@ Recomendarr is designed to be ridiculously easy to spin up, primarily via Docker
 ```yaml
 services:
   recomendarr:
-    image: dheerajr00/recomendarr:latest
+    image: dheerajr00/recomendarr:3
     container_name: recomendarr
     ports:
       - "3000:3000"
@@ -100,7 +100,7 @@ docker run -d \
   -p 3000:3000 \
   -v recomendarr-data:/app/data \
   --restart unless-stopped \
-  dheerajr00/recomendarr:latest
+  dheerajr00/recomendarr:3
 ```
 
 ### Option 3: Local Node.js Development
@@ -127,12 +127,13 @@ npm run dev
 No matter which deployment method you choose, open your browser and navigate to:
 **[http://localhost:3000](http://localhost:3000)**
 
-On your first visit, you will be greeted by the **Setup Wizard**, which will walk you through setting up your ecosystem in 4 easy steps:
+On your first visit, you will be greeted by the **Setup Wizard**, which will walk you through setting up your ecosystem in 5 easy steps:
 
 1. **Media Server**: Connect Plex, Jellyfin, or Emby to allow Recomendarr to read your Watch History.
 2. **Sonarr**: Connect your Sonarr instance for handling TV Series.
 3. **Radarr**: Connect your Radarr instance for handling Movies.
 4. **AI Recommender (Optional)**: Provide an OpenAI API key (or compatible local LLM URL) for context-aware, hyper-personalized recommendations.
+5. **Review**: Confirm the discovered defaults and save the full stack before the first run.
 
 Once setup is complete, settings are permanently saved to the `recomendarr.db` SQLite database inside your Docker volume. 
 

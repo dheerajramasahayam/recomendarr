@@ -3,6 +3,13 @@
 // ============================================
 
 export type MediaType = 'movie' | 'series';
+export type FeedbackReason =
+    | 'already_watched'
+    | 'wrong_genre'
+    | 'wrong_mood'
+    | 'too_mainstream'
+    | 'too_old'
+    | 'not_interested';
 
 export interface WatchedItem {
     title: string;
@@ -36,8 +43,21 @@ export interface Recommendation {
     aiReasoning?: string;
     basedOn?: string;      // title of the watched item that triggered this
     status: 'pending' | 'approved' | 'rejected' | 'added';
+    feedbackReason?: FeedbackReason;
+    feedbackNotes?: string;
+    feedbackAt?: string;
     createdAt?: string;
     updatedAt?: string;
+}
+
+export interface FeedbackProfile {
+    rejectedTitles: string[];
+    preferredGenres: string[];
+    avoidedGenres: string[];
+    preferredMediaTypes: MediaType[];
+    avoidedMediaTypes: MediaType[];
+    feedbackReasons: Partial<Record<FeedbackReason, number>>;
+    summary: string;
 }
 
 export interface MediaServerConfig {
