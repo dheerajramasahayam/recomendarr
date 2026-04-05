@@ -18,7 +18,7 @@ const PROVIDERS = [
 
 interface DashboardPageProps {
     summary: DashboardSummary;
-    recs: Recommendation[];
+    pendingRecs: Recommendation[];
     isRunning: boolean;
     onRun: () => void;
     onOpenRecommendations: () => void;
@@ -28,15 +28,13 @@ interface DashboardPageProps {
 
 export function DashboardPage({
     summary,
-    recs,
+    pendingRecs,
     isRunning,
     onRun,
     onOpenRecommendations,
     engineFilters,
     setEngineFilters,
 }: DashboardPageProps) {
-    const pendingRecs = recs.filter((rec) => rec.status === 'pending').slice(0, 4);
-
     const toggleGenre = (genre: string) => {
         setEngineFilters((prev) => ({
             ...prev,

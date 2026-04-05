@@ -27,6 +27,42 @@ interface LibrarySets {
     watchedTitles: Set<string>;
 }
 
+async function inferPreferredLanguages(items: WatchedItem[]): Promise<string[]> {
+    const counts = new Map<string, number>();
+
+    for (const item of items.slice(0, 10)) {
+        let language = item.language?.toLowerCase();
+
+        if (!language) {
+            try {
+                const type = item.mediaType === 'movie' ? 'movie' : 'tv';
+                const tmdbResult = await searchTmdb(item.title, type);
+                language = tmdbResult?.original_language?.toLowerCase();
+                if (language) {
+                    item.language = language;
+                }
+            } catch {
+                // Ignore lookup failures while building language preferences
+            }
+        }
+
+        if (!language) {
+            continue;
+        }
+
+        counts.set(language, (counts.get(language) || 0) + 1);
+    }
+
+    const rankedLanguages = Array.from(counts.entries())
+        .sort((a, b) => b[1] - a[1])
+        .map(([language]) => language);
+
+    const nonEnglish = rankedLanguages.filter((language) => language !== 'en');
+    return nonEnglish.length > 0
+        ? [...nonEnglish, ...rankedLanguages.filter((language) => language === 'en')]
+        : rankedLanguages;
+}
+
 // ============================================
 // Recommendation Engine — Orchestrator
 // ============================================
@@ -42,7 +78,11 @@ export interface RunResult {
 
 let isRunning = false;
 
-function scoreRecommendation(rec: Recommendation, feedbackProfile: FeedbackProfile): number {
+function scoreRecommendation(
+    rec: Recommendation,
+    feedbackProfile: FeedbackProfile,
+    preferredLanguages: string[] = []
+): number {
     let score = rec.voteAverage ? rec.voteAverage / 10 : 0;
 
     if (rec.source === 'ai') score += 0.4;
@@ -64,6 +104,19 @@ function scoreRecommendation(rec: Recommendation, feedbackProfile: FeedbackProfi
 
     if (feedbackProfile.rejectedTitles.includes(rec.title.toLowerCase())) {
         score -= 100;
+    }
+
+    const recLanguage = rec.language?.toLowerCase();
+    if (recLanguage && preferredLanguages.includes(recLanguage)) {
+        score += recLanguage === 'en' ? 0.2 : 0.9;
+    }
+
+    if (
+        recLanguage === 'en' &&
+        preferredLanguages.some((language) => language !== 'en') &&
+        !preferredLanguages.includes('en')
+    ) {
+        score -= 0.5;
     }
 
     return score;
@@ -185,6 +238,17 @@ export async function runRecommendationEngine(
         const sampledItems = scoredHistory.slice(0, 10).map(s => s.item);
         addLog({ level: 'INFO', message: `🎲 Smart sampled ${sampledItems.length} items to generate baseline recommendations`, source: 'engine' });
 
+        const preferredLanguages = filters?.language && filters.language !== 'all'
+            ? [filters.language.toLowerCase()]
+            : await inferPreferredLanguages(sampledItems);
+        if (preferredLanguages.length > 0) {
+            addLog({
+                level: 'INFO',
+                message: `🌐 Language preference signal detected: ${preferredLanguages.join(', ')}`,
+                source: 'engine',
+            });
+        }
+
         for (const item of sampledItems) {
             try {
                 const recs = await getRecommendationsForItem(item, maxPerItem);
@@ -195,17 +259,21 @@ export async function runRecommendationEngine(
         }
 
         // Step 2b: Filter-driven discovery via TMDb /discover endpoint
-        if (filters && (filters.genres?.length || filters.yearMin || filters.yearMax || (filters.language && filters.language !== 'all') || (filters.mediaType && filters.mediaType !== 'all'))) {
+        if (
+            (filters && (filters.genres?.length || filters.yearMin || filters.yearMax || (filters.language && filters.language !== 'all') || (filters.mediaType && filters.mediaType !== 'all')))
+            || preferredLanguages.length > 0
+        ) {
             try {
                 addLog({ level: 'INFO', message: `🔍 Running filter-driven TMDb discovery...`, source: 'engine' });
                 const discoverRecs = await discoverByFilters({
-                    genres: filters.genres,
-                    language: filters.language,
-                    yearMin: filters.yearMin,
-                    yearMax: filters.yearMax,
-                    mediaType: filters.mediaType,
-                    minRating: filters.minRating,
-                    providers: filters.providers,
+                    genres: filters?.genres,
+                    language: filters?.language,
+                    preferredLanguages,
+                    yearMin: filters?.yearMin,
+                    yearMax: filters?.yearMax,
+                    mediaType: filters?.mediaType,
+                    minRating: filters?.minRating,
+                    providers: filters?.providers,
                 }, cfg.app.maxRecommendationsPerRun);
                 allTmdbRecs.push(...discoverRecs);
                 addLog({ level: 'INFO', message: `🔍 Filter discovery added ${discoverRecs.length} recommendations`, source: 'engine' });
@@ -226,7 +294,7 @@ export async function runRecommendationEngine(
                     const director = credits.crew.find((crewMember) => crewMember.job === 'Director');
                     if (director) {
                         addLog({ level: 'INFO', message: `🎬 Creator Following: Discovering works by ${director.name} (from ${s.item.title})`, source: 'engine' });
-                        const directorRecs = await discoverByCrew(director.id, 'movie', director.name, 3);
+                        const directorRecs = await discoverByCrew(director.id, 'movie', director.name, 3, preferredLanguages);
                         allTmdbRecs.push(...directorRecs);
                     }
                 }
@@ -266,8 +334,8 @@ export async function runRecommendationEngine(
                     if (id) keywordIds.push(id);
                 }
                 if (keywordIds.length > 0) {
-                    const kwMovieRecs = await discoverByKeywords(keywordIds, 'movie', 5);
-                    const kwTvRecs = await discoverByKeywords(keywordIds, 'series', 5);
+                    const kwMovieRecs = await discoverByKeywords(keywordIds, 'movie', 5, preferredLanguages);
+                    const kwTvRecs = await discoverByKeywords(keywordIds, 'series', 5, preferredLanguages);
                     allTmdbRecs.push(...kwMovieRecs, ...kwTvRecs);
                     addLog({ level: 'INFO', message: `🔍 Keyword discovery added ${kwMovieRecs.length + kwTvRecs.length} recommendations`, source: 'engine' });
                 }
@@ -278,7 +346,7 @@ export async function runRecommendationEngine(
 
         // Step 4: Merge, deduplicate, and save
         const allRecs = [...allTmdbRecs, ...aiRecs]
-            .toSorted((a, b) => scoreRecommendation(b, feedbackProfile) - scoreRecommendation(a, feedbackProfile));
+            .toSorted((a, b) => scoreRecommendation(b, feedbackProfile, preferredLanguages) - scoreRecommendation(a, feedbackProfile, preferredLanguages));
         const seen = new Set<string>();
         const uniqueRecs: Recommendation[] = [];
 
@@ -288,14 +356,13 @@ export async function runRecommendationEngine(
             seen.add(key);
 
             // Resolve missing metadata (poster, overview, genres) via TMDb
-            if (!rec.posterUrl || !rec.tmdbId) {
+            if (!rec.posterUrl || !rec.tmdbId || !rec.language || !rec.genres?.length || !rec.overview || !rec.voteAverage) {
                 const type = rec.mediaType === 'movie' ? 'movie' : 'tv';
-                const tmdbResult = rec.tmdbId
-                    ? null  // already have ID, try to get details directly
-                    : await searchTmdb(rec.title, type);
+                const tmdbResult = await searchTmdb(rec.title, type);
 
                 if (tmdbResult) {
                     rec.tmdbId = tmdbResult.id;
+                    rec.language = rec.language || tmdbResult.original_language;
                     rec.overview = rec.overview || tmdbResult.overview;
                     rec.posterUrl = rec.posterUrl || (tmdbResult.poster_path
                         ? `https://image.tmdb.org/t/p/w500${tmdbResult.poster_path}`
@@ -322,13 +389,14 @@ export async function runRecommendationEngine(
                 }
 
                 // If we still don't have a poster and have a tmdbId, try getting details directly
-                if (!rec.posterUrl && rec.tmdbId) {
+                if ((!rec.posterUrl || !rec.language) && rec.tmdbId) {
                     try {
                         const detailType = rec.mediaType === 'movie' ? 'movie' : 'tv';
                         const detailResult = await searchTmdb(rec.title, detailType);
                         if (detailResult?.poster_path) {
                             rec.posterUrl = `https://image.tmdb.org/t/p/w500${detailResult.poster_path}`;
                         }
+                        if (detailResult?.original_language && !rec.language) rec.language = detailResult.original_language;
                         if (detailResult && !rec.overview) rec.overview = detailResult.overview;
                         if (detailResult && !rec.voteAverage) rec.voteAverage = detailResult.vote_average;
                     } catch { /* ignore */ }
@@ -387,7 +455,7 @@ export async function runRecommendationEngine(
                     }
                 }
                 if (filters.language && filters.language !== 'all') {
-                    if (rec.source === 'tmdb' && (!rec.language || rec.language.toLowerCase() !== filters.language.toLowerCase())) {
+                    if (!rec.language || rec.language.toLowerCase() !== filters.language.toLowerCase()) {
                         addLog({ level: 'DEBUG', message: `Filtered out "${rec.title}" — language ${rec.language} doesn't match filter ${filters.language}`, source: 'engine' });
                         continue;
                     }

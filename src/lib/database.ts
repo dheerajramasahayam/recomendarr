@@ -137,14 +137,19 @@ export function addRecommendation(rec: Recommendation): Recommendation {
     return { ...rec, id };
 }
 
-export function getRecommendations(status?: string, limit = 50, offset = 0): Recommendation[] {
+export function getRecommendations(status?: Recommendation['status'] | Recommendation['status'][], limit = 50, offset = 0): Recommendation[] {
     const db = getDatabase();
     let query = 'SELECT * FROM recommendations';
-    const params: (string | number)[] = [];
+    const params: Array<Recommendation['status'] | number> = [];
+    const statuses = Array.isArray(status)
+        ? status.filter(Boolean)
+        : status
+            ? [status]
+            : [];
 
-    if (status) {
-        query += ' WHERE status = ?';
-        params.push(status);
+    if (statuses.length > 0) {
+        query += ` WHERE status IN (${statuses.map(() => '?').join(', ')})`;
+        params.push(...statuses);
     }
     query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
     params.push(limit, offset);

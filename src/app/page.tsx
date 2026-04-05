@@ -12,9 +12,29 @@ import type {
     Counts,
     EngineFilterState,
     Page,
+    RecommendationFilter,
 } from '@/components/app/models';
 import { EMPTY_DASHBOARD_SUMMARY } from '@/components/app/models';
 import type { LogEntry, Recommendation } from '@/lib/types';
+
+const RECOMMENDATION_PAGE_SIZE = 24;
+const EMPTY_COUNTS: Counts = { pending: 0, approved: 0, rejected: 0, added: 0, total: 0 };
+
+function getRecommendationStatuses(page: Page, filter: RecommendationFilter) {
+    if (page === 'library') {
+        return ['added'];
+    }
+
+    if (filter === 'pending') {
+        return ['pending'];
+    }
+
+    if (filter === 'rejected') {
+        return ['rejected'];
+    }
+
+    return ['pending', 'rejected'];
+}
 
 export default function Home() {
     return (
@@ -35,12 +55,17 @@ function HomeContent() {
     const [setupComplete, setSetupComplete] = useState<boolean | null>(null);
     const [setupStep, setSetupStep] = useState(0);
     const [recs, setRecs] = useState<Recommendation[]>([]);
-    const [counts, setCounts] = useState<Counts>({ pending: 0, approved: 0, rejected: 0, added: 0, total: 0 });
+    const [pendingPreviewRecs, setPendingPreviewRecs] = useState<Recommendation[]>([]);
+    const [counts, setCounts] = useState<Counts>(EMPTY_COUNTS);
     const [logs, setLogs] = useState<LogEntry[]>([]);
-    const [filter, setFilter] = useState('all');
+    const [filter, setFilter] = useState<RecommendationFilter>('all');
     const [logFilter, setLogFilter] = useState('all');
     const [isRunning, setIsRunning] = useState(false);
     const [loading, setLoading] = useState(false);
+    const [listLoading, setListLoading] = useState(false);
+    const [loadingMoreRecs, setLoadingMoreRecs] = useState(false);
+    const [hasMoreRecs, setHasMoreRecs] = useState(true);
+    const [recOffset, setRecOffset] = useState(0);
     const [toasts, setToasts] = useState<Array<{ id: number; msg: string; type: string }>>([]);
     const [dashboardSummary, setDashboardSummary] = useState(EMPTY_DASHBOARD_SUMMARY);
 
@@ -76,18 +101,80 @@ function HomeContent() {
         setTimeout(() => setToasts((prev) => prev.filter((item) => item.id !== id)), 4000);
     }, []);
 
-    const fetchRecs = useCallback(async () => {
+    const fetchPendingPreview = useCallback(async () => {
         try {
-            const params = new URLSearchParams();
-            if (filter !== 'all') params.set('status', filter);
+            const params = new URLSearchParams({ status: 'pending', limit: '4' });
             const response = await fetch(`/api/recommendations?${params}`);
             const data = await response.json();
-            setRecs(data.recommendations || []);
-            setCounts(data.counts || { pending: 0, approved: 0, rejected: 0, added: 0, total: 0 });
+            setPendingPreviewRecs(data.recommendations || []);
+            setCounts(data.counts || EMPTY_COUNTS);
         } catch {
             // silent fetch failure
         }
-    }, [filter]);
+    }, []);
+
+    const loadRecommendationCollection = useCallback(async ({
+        reset,
+        offset,
+    }: {
+        reset: boolean;
+        offset: number;
+    }) => {
+        if (page !== 'recommendations' && page !== 'library') {
+            return;
+        }
+
+        if (reset) {
+            setListLoading(true);
+            setRecs([]);
+            setRecOffset(0);
+        } else {
+            setLoadingMoreRecs(true);
+        }
+
+        try {
+            const params = new URLSearchParams({
+                status: getRecommendationStatuses(page, filter).join(','),
+                limit: String(RECOMMENDATION_PAGE_SIZE),
+                offset: String(offset),
+            });
+            const response = await fetch(`/api/recommendations?${params}`);
+            const data = await response.json();
+            const nextRecs = Array.isArray(data.recommendations) ? data.recommendations as Recommendation[] : [];
+
+            setRecs((prev) => {
+                if (reset) {
+                    return nextRecs;
+                }
+
+                const seen = new Set(prev.map((rec) => rec.id));
+                return [...prev, ...nextRecs.filter((rec) => !seen.has(rec.id))];
+            });
+            setCounts(data.counts || EMPTY_COUNTS);
+            setRecOffset(offset + nextRecs.length);
+            setHasMoreRecs(nextRecs.length === RECOMMENDATION_PAGE_SIZE);
+        } catch {
+            if (reset) {
+                setRecs([]);
+                setHasMoreRecs(false);
+            }
+        } finally {
+            setListLoading(false);
+            setLoadingMoreRecs(false);
+        }
+    }, [filter, page]);
+
+    const loadMoreRecommendations = useCallback(() => {
+        if (page !== 'recommendations' && page !== 'library') {
+            return;
+        }
+
+        if (listLoading || loadingMoreRecs || !hasMoreRecs) {
+            return;
+        }
+
+        void loadRecommendationCollection({ reset: false, offset: recOffset });
+    }, [hasMoreRecs, listLoading, loadRecommendationCollection, loadingMoreRecs, page, recOffset]);
 
     const fetchDashboardSummary = useCallback(async () => {
         try {
@@ -130,14 +217,28 @@ function HomeContent() {
 
     useEffect(() => {
         if (!setupComplete) return;
-        void Promise.all([fetchRecs(), fetchDashboardSummary(), checkEngine()]);
-    }, [checkEngine, fetchDashboardSummary, fetchRecs, setupComplete]);
+        void Promise.all([fetchPendingPreview(), fetchDashboardSummary(), checkEngine()]);
+    }, [checkEngine, fetchDashboardSummary, fetchPendingPreview, setupComplete]);
+
+    useEffect(() => {
+        if (!setupComplete) return;
+        if (page !== 'recommendations' && page !== 'library') return;
+        void loadRecommendationCollection({ reset: true, offset: 0 });
+    }, [filter, loadRecommendationCollection, page, setupComplete]);
 
     useEffect(() => {
         if (page === 'logs' && setupComplete) {
             void fetchLogs();
         }
     }, [fetchLogs, page, setupComplete]);
+
+    useEffect(() => {
+        if (!setupComplete) {
+            return;
+        }
+
+        window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    }, [page, setupComplete]);
 
     if (setupComplete === null) {
         return (
@@ -199,7 +300,13 @@ function HomeContent() {
             }
 
             toast(`Found ${data.totalNew} new recommendations`, 'success');
-            await Promise.all([fetchRecs(), fetchDashboardSummary()]);
+            await Promise.all([
+                fetchPendingPreview(),
+                fetchDashboardSummary(),
+                page === 'recommendations' || page === 'library'
+                    ? loadRecommendationCollection({ reset: true, offset: 0 })
+                    : Promise.resolve(),
+            ]);
         } catch (error) {
             toast((error as Error).message, 'error');
         } finally {
@@ -254,7 +361,13 @@ function HomeContent() {
 
             toast(data.message, 'success');
             setModalRec(null);
-            await Promise.all([fetchRecs(), fetchDashboardSummary()]);
+            await Promise.all([
+                fetchPendingPreview(),
+                fetchDashboardSummary(),
+                page === 'recommendations' || page === 'library'
+                    ? loadRecommendationCollection({ reset: true, offset: 0 })
+                    : Promise.resolve(),
+            ]);
         } catch (error) {
             toast((error as Error).message, 'error');
         } finally {
@@ -288,7 +401,13 @@ function HomeContent() {
             setFeedbackRec(null);
             setFeedbackReason('not_interested');
             setFeedbackNotes('');
-            await Promise.all([fetchRecs(), fetchDashboardSummary()]);
+            await Promise.all([
+                fetchPendingPreview(),
+                fetchDashboardSummary(),
+                page === 'recommendations' || page === 'library'
+                    ? loadRecommendationCollection({ reset: true, offset: 0 })
+                    : Promise.resolve(),
+            ]);
         } catch (error) {
             toast((error as Error).message, 'error');
         } finally {
@@ -330,7 +449,13 @@ function HomeContent() {
             }
 
             toast(action === 'pending' ? 'Returned to queue' : 'Recommendation updated', 'info');
-            await Promise.all([fetchRecs(), fetchDashboardSummary()]);
+            await Promise.all([
+                fetchPendingPreview(),
+                fetchDashboardSummary(),
+                page === 'recommendations' || page === 'library'
+                    ? loadRecommendationCollection({ reset: true, offset: 0 })
+                    : Promise.resolve(),
+            ]);
         } catch (error) {
             toast((error as Error).message, 'error');
         } finally {
@@ -384,6 +509,7 @@ function HomeContent() {
                     {[
                         { id: 'dashboard', label: 'Dashboard' },
                         { id: 'recommendations', label: `Recommendations${counts.pending > 0 ? ` (${counts.pending})` : ''}` },
+                        { id: 'library', label: `Library${counts.added > 0 ? ` (${counts.added})` : ''}` },
                         { id: 'logs', label: 'Logs' },
                         { id: 'settings', label: 'Settings' },
                     ].map((item) => (
@@ -409,7 +535,7 @@ function HomeContent() {
                 {page === 'dashboard' && (
                     <DashboardPage
                         summary={dashboardSummary}
-                        recs={recs}
+                        pendingRecs={pendingPreviewRecs}
                         isRunning={isRunning}
                         onRun={runEngine}
                         onOpenRecommendations={() => setPage('recommendations')}
@@ -420,13 +546,37 @@ function HomeContent() {
 
                 {page === 'recommendations' && (
                     <RecommendationsWorkspace
+                        key={`queue-${filter}`}
                         recs={recs}
                         counts={counts}
                         filter={filter}
                         setFilter={setFilter}
                         feedbackProfile={dashboardSummary.feedbackProfile}
                         loading={loading}
+                        listLoading={listLoading}
+                        loadingMore={loadingMoreRecs}
+                        hasMore={hasMoreRecs}
+                        onLoadMore={loadMoreRecommendations}
                         onAction={handleAction}
+                        mode="queue"
+                    />
+                )}
+
+                {page === 'library' && (
+                    <RecommendationsWorkspace
+                        key="library"
+                        recs={recs}
+                        counts={counts}
+                        filter={filter}
+                        setFilter={setFilter}
+                        feedbackProfile={dashboardSummary.feedbackProfile}
+                        loading={loading}
+                        listLoading={listLoading}
+                        loadingMore={loadingMoreRecs}
+                        hasMore={hasMoreRecs}
+                        onLoadMore={loadMoreRecommendations}
+                        onAction={handleAction}
+                        mode="library"
                     />
                 )}
 
@@ -454,6 +604,7 @@ function HomeContent() {
                 {[
                     { id: 'dashboard', label: 'Dashboard' },
                     { id: 'recommendations', label: 'Queue' },
+                    { id: 'library', label: 'Library' },
                     { id: 'logs', label: 'Logs' },
                     { id: 'settings', label: 'Settings' },
                 ].map((item) => (

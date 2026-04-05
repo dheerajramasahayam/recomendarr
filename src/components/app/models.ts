@@ -1,6 +1,7 @@
 import type { FeedbackProfile, FeedbackReason } from '@/lib/types';
 
-export type Page = 'dashboard' | 'recommendations' | 'logs' | 'settings';
+export type Page = 'dashboard' | 'recommendations' | 'library' | 'logs' | 'settings';
+export type RecommendationFilter = 'all' | 'pending' | 'rejected';
 export type SettingsTabId = 'media' | 'arr' | 'ai' | 'automation' | 'notifications' | 'advanced';
 
 export interface Counts {

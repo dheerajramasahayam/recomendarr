@@ -3,6 +3,10 @@ export async function register() {
     return;
   }
 
+  if (process.env.NEXT_PHASE === 'phase-production-build') {
+    return;
+  }
+
   const { ensureSchedulerWatcher, syncRecommendationScheduler } = await import('./lib/scheduler');
   syncRecommendationScheduler();
   ensureSchedulerWatcher();

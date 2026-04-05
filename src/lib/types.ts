@@ -14,6 +14,7 @@ export type FeedbackReason =
 export interface WatchedItem {
     title: string;
     year?: number;
+    language?: string;
     mediaType: MediaType;
     tmdbId?: number;
     tvdbId?: number;

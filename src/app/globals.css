@@ -608,6 +608,15 @@ textarea {
   padding-right: 6px;
 }
 
+.workspace-feed-state {
+  display: grid;
+  place-items: center;
+  gap: 10px;
+  padding: 18px 0 6px;
+  color: var(--text-soft);
+  text-align: center;
+}
+
 .workspace-item {
   display: grid;
   grid-template-columns: 88px minmax(0, 1fr);
@@ -1532,7 +1541,7 @@ textarea {
     left: 14px;
     z-index: 40;
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 8px;
     padding: 10px;
     border-radius: 24px;

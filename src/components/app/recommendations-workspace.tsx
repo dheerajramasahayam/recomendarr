@@ -1,19 +1,24 @@
 'use client';
 
-import { useDeferredValue, useMemo, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import type { FeedbackProfile, Recommendation } from '@/lib/types';
-import type { Counts } from './models';
+import type { Counts, RecommendationFilter } from './models';
 import { RecommendationDetail } from './recommendation-detail';
 import { formatFeedbackReason, getLearningHighlights, getRecommendationSignals } from './utils';
 
 interface RecommendationsWorkspaceProps {
     recs: Recommendation[];
     counts: Counts;
-    filter: string;
-    setFilter: (value: string) => void;
+    filter: RecommendationFilter;
+    setFilter: (value: RecommendationFilter) => void;
     feedbackProfile: FeedbackProfile;
     loading: boolean;
+    listLoading: boolean;
+    loadingMore: boolean;
+    hasMore: boolean;
+    onLoadMore: () => void;
     onAction: (id: string, action: string) => void;
+    mode: 'queue' | 'library';
 }
 
 export function RecommendationsWorkspace({
@@ -23,12 +28,21 @@ export function RecommendationsWorkspace({
     setFilter,
     feedbackProfile,
     loading,
+    listLoading,
+    loadingMore,
+    hasMore,
+    onLoadMore,
     onAction,
+    mode,
 }: RecommendationsWorkspaceProps) {
     const [searchQuery, setSearchQuery] = useState('');
     const [sortBy, setSortBy] = useState<'newest' | 'rating'>('newest');
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const deferredQuery = useDeferredValue(searchQuery);
+    const scrollRef = useRef<HTMLDivElement | null>(null);
+    const sentinelRef = useRef<HTMLDivElement | null>(null);
+    const queueCount = counts.pending + counts.rejected;
+    const isQueueMode = mode === 'queue';
 
     const filteredRecs = useMemo(() => {
         return recs
@@ -49,45 +63,108 @@ export function RecommendationsWorkspace({
             });
     }, [deferredQuery, recs, sortBy]);
 
+    useEffect(() => {
+        if (!hasMore || loadingMore || listLoading) {
+            return;
+        }
+
+        const root = scrollRef.current;
+        const target = sentinelRef.current;
+        if (!root || !target) {
+            return;
+        }
+
+        const observer = new IntersectionObserver(
+            (entries) => {
+                if (entries.some((entry) => entry.isIntersecting)) {
+                    onLoadMore();
+                }
+            },
+            {
+                root,
+                rootMargin: '0px 0px 220px 0px',
+                threshold: 0.1,
+            }
+        );
+
+        observer.observe(target);
+        return () => observer.disconnect();
+    }, [filteredRecs.length, hasMore, listLoading, loadingMore, onLoadMore]);
+
     const resolvedSelectedId = filteredRecs.some((rec) => rec.id === selectedId)
         ? selectedId
         : (filteredRecs[0]?.id || null);
 
     const selectedRecommendation = filteredRecs.find((rec) => rec.id === resolvedSelectedId) || null;
 
+    const copy = isQueueMode
+        ? {
+            kicker: 'Triage Workspace',
+            title: 'Recommendations',
+            description: 'Review the active queue in one place, inspect the rationale, and feed the engine better signals.',
+            listTitle: `${filteredRecs.length} titles ready for review`,
+            emptyIcon: 'Queue',
+            emptyTitle: 'No recommendations in this view',
+            emptyDescription: 'Try a different status filter or run the engine again to refill the queue.',
+            detailEmpty: {
+                kicker: 'Triage Workspace',
+                title: 'Select a recommendation',
+                description: 'Pick a title from the queue to inspect the recommendation rationale, watch the trailer, and approve or reject it.',
+            },
+            searchPlaceholder: 'Search queue titles, explanations, or feedback...',
+            footerDone: 'You have reached the end of the triage queue.',
+        }
+        : {
+            kicker: 'Library Intake',
+            title: 'Added Titles',
+            description: 'Keep library sends separate from triage so the recommendation queue stays clean and reviewable.',
+            listTitle: `${filteredRecs.length} titles already moved into your library workflow`,
+            emptyIcon: 'Library',
+            emptyTitle: 'No added titles yet',
+            emptyDescription: 'Approve a recommendation and it will move here once it is sent to Sonarr or Radarr.',
+            detailEmpty: {
+                kicker: 'Library Intake',
+                title: 'Select an added title',
+                description: 'Pick a title to inspect why it was added, review the trailer, and confirm the recommendation context.',
+            },
+            searchPlaceholder: 'Search added titles, notes, or reasoning...',
+            footerDone: 'You have reached the end of the added-title history.',
+        };
+
     return (
         <div className="page-stack">
             <div className="page-header refined">
                 <div>
-                    <p className="page-kicker">Triage Workspace</p>
-                    <h2>Recommendations</h2>
-                    <p>Review the queue in one place, inspect the rationale, and feed the engine better signals.</p>
+                    <p className="page-kicker">{copy.kicker}</p>
+                    <h2>{copy.title}</h2>
+                    <p>{copy.description}</p>
                 </div>
             </div>
 
             <div className="filter-shell">
-                <div className="filter-tabs wide">
-                    {[
-                        { key: 'all', label: `All (${counts.total})` },
-                        { key: 'pending', label: `Pending (${counts.pending})` },
-                        { key: 'added', label: `Added (${counts.added})` },
-                        { key: 'rejected', label: `Rejected (${counts.rejected})` },
-                    ].map((tab) => (
-                        <button
-                            key={tab.key}
-                            className={`filter-tab ${filter === tab.key ? 'active' : ''}`}
-                            onClick={() => setFilter(tab.key)}
-                        >
-                            {tab.label}
-                        </button>
-                    ))}
-                </div>
+                {isQueueMode && (
+                    <div className="filter-tabs wide">
+                        {[
+                            { key: 'all', label: `All active (${queueCount})` },
+                            { key: 'pending', label: `Pending (${counts.pending})` },
+                            { key: 'rejected', label: `Rejected (${counts.rejected})` },
+                        ].map((tab) => (
+                            <button
+                                key={tab.key}
+                                className={`filter-tab ${filter === tab.key ? 'active' : ''}`}
+                                onClick={() => setFilter(tab.key as RecommendationFilter)}
+                            >
+                                {tab.label}
+                            </button>
+                        ))}
+                    </div>
+                )}
 
                 <div className="workspace-controls">
                     <input
                         type="text"
                         className="workspace-search"
-                        placeholder="Search titles, explanations, or feedback..."
+                        placeholder={copy.searchPlaceholder}
                         value={searchQuery}
                         onChange={(event) => setSearchQuery(event.target.value)}
                     />
@@ -98,23 +175,29 @@ export function RecommendationsWorkspace({
                 </div>
             </div>
 
-            {filteredRecs.length === 0 ? (
+            {listLoading && recs.length === 0 ? (
                 <div className="empty-state refined">
-                    <div className="empty-icon">Queue</div>
-                    <h3>No recommendations in this view</h3>
-                    <p>Try a different status filter or run the engine again to refill the queue.</p>
+                    <div className="spinner spinner-lg" />
+                    <h3>Loading titles</h3>
+                    <p>Fetching the next slice of recommendations from the queue.</p>
+                </div>
+            ) : filteredRecs.length === 0 ? (
+                <div className="empty-state refined">
+                    <div className="empty-icon">{copy.emptyIcon}</div>
+                    <h3>{copy.emptyTitle}</h3>
+                    <p>{copy.emptyDescription}</p>
                 </div>
             ) : (
                 <div className="workspace-shell">
                     <aside className="workspace-list">
                         <div className="workspace-list-header">
                             <div>
-                                <p className="section-kicker">Queue</p>
-                                <h3>{filteredRecs.length} titles ready for review</h3>
+                                <p className="section-kicker">{isQueueMode ? 'Queue' : 'Library'}</p>
+                                <h3>{copy.listTitle}</h3>
                             </div>
                         </div>
 
-                        <div className="workspace-list-scroll">
+                        <div ref={scrollRef} className="workspace-list-scroll">
                             {filteredRecs.map((rec) => {
                                 const signals = getRecommendationSignals(rec, feedbackProfile);
                                 const learningHighlights = getLearningHighlights(rec, feedbackProfile);
@@ -171,6 +254,21 @@ export function RecommendationsWorkspace({
                                     </button>
                                 );
                             })}
+
+                            <div ref={sentinelRef} className="workspace-feed-state">
+                                {loadingMore ? (
+                                    <>
+                                        <span className="spinner" />
+                                        Loading more titles...
+                                    </>
+                                ) : hasMore ? (
+                                    <button type="button" className="btn btn-ghost" onClick={onLoadMore}>
+                                        Load more
+                                    </button>
+                                ) : (
+                                    <span className="helper-copy">{copy.footerDone}</span>
+                                )}
+                            </div>
                         </div>
                     </aside>
 
@@ -180,6 +278,7 @@ export function RecommendationsWorkspace({
                             feedbackProfile={feedbackProfile}
                             loading={loading}
                             onAction={onAction}
+                            emptyState={copy.detailEmpty}
                         />
                     </div>
                 </div>

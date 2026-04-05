@@ -23,7 +23,7 @@
 ## � App Preview
 
 <p align="center">
-  <img src="docs/recomendarr_final_demo_1772059102541.webp" alt="Recomendarr Demo" width="100%">
+  <img src="docs/recomendarr_demo_v3_0_1.webp" alt="Recomendarr Demo" width="100%">
 </p>
 
 <details>
@@ -36,6 +36,9 @@
 
 **Smart AI Recommendations**
 <img src="docs/recommendations.png" alt="Recommendations" width="100%">
+
+**Library Tracking**
+<img src="docs/library.png" alt="Library" width="100%">
 
 **Connection Testing & Settings**
 <img src="docs/settings.png" alt="Settings" width="100%">

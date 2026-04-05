@@ -197,6 +197,7 @@ for (const [id, name] of Object.entries(GENRE_MAP)) {
 export interface DiscoverFilters {
     genres?: string[];
     language?: string;
+    preferredLanguages?: string[];
     yearMin?: number;
     yearMax?: number;
     mediaType?: 'movie' | 'series' | 'all';
@@ -209,6 +210,7 @@ export async function discoverByFilters(
     maxResults = 20
 ): Promise<Recommendation[]> {
     const recommendations: Recommendation[] = [];
+    const seen = new Set<string>();
     const types: Array<'movie' | 'tv'> = [];
 
     if (!filters.mediaType || filters.mediaType === 'all') {
@@ -224,7 +226,17 @@ export async function discoverByFilters(
         .map(name => GENRE_NAME_TO_ID[name.toLowerCase()])
         .filter(Boolean);
 
+    const languageTargets = filters.language && filters.language !== 'all'
+        ? [filters.language.toLowerCase()]
+        : (filters.preferredLanguages || [])
+            .map((language) => language.toLowerCase())
+            .filter(Boolean)
+            .slice(0, 3);
+    const requestLanguages = languageTargets.length > 0 ? languageTargets : [null];
+    const resultsPerRequest = Math.max(1, Math.ceil(maxResults / (types.length * requestLanguages.length)));
+
     for (const type of types) {
+        for (const languageTarget of requestLanguages) {
         try {
             // Use a random page 1-3 to get some variety across different engine runs
             const randomPage = Math.floor(Math.random() * 3) + 1;
@@ -244,8 +256,8 @@ export async function discoverByFilters(
                 params.with_genres = genreIds.join(',');
             }
 
-            if (filters.language && filters.language !== 'all') {
-                params.with_original_language = filters.language;
+            if (languageTarget) {
+                params.with_original_language = languageTarget;
             }
 
             if (type === 'movie') {
@@ -260,7 +272,10 @@ export async function discoverByFilters(
             const results: TmdbResult[] = res.data.results || [];
             const mediaType = type === 'movie' ? 'movie' : 'series';
 
-            for (const result of results.slice(0, Math.ceil(maxResults / types.length))) {
+            for (const result of results.slice(0, resultsPerRequest)) {
+                const key = `${mediaType}:${result.id}`;
+                if (seen.has(key)) continue;
+                seen.add(key);
                 recommendations.push(
                     tmdbResultToRecommendation(result, mediaType as 'movie' | 'series', 'tmdb', 'filter-discovery')
                 );
@@ -268,11 +283,12 @@ export async function discoverByFilters(
 
             addLog({
                 level: 'INFO',
-                message: `🔍 TMDb discover (${type}) found ${results.length} results with filters: genres=[${filters.genres?.join(', ') || 'any'}], years=${filters.yearMin || 'any'}-${filters.yearMax || 'any'}`,
+                message: `🔍 TMDb discover (${type}) found ${results.length} results with filters: genres=[${filters.genres?.join(', ') || 'any'}], years=${filters.yearMin || 'any'}-${filters.yearMax || 'any'}, language=${languageTarget || 'any'}`,
                 source: 'tmdb',
             });
         } catch (err) {
             addLog({ level: 'ERROR', message: `TMDb discover (${type}) failed: ${(err as Error).message}`, source: 'tmdb' });
+        }
         }
     }
 
@@ -307,48 +323,78 @@ export async function searchTmdbKeyword(query: string): Promise<number | null> {
 export async function discoverByKeywords(
     keywordIds: number[],
     type: 'movie' | 'series',
-    maxResults = 5
+    maxResults = 5,
+    languages: string[] = []
 ): Promise<Recommendation[]> {
     if (keywordIds.length === 0) return [];
-    try {
-        const t = type === 'movie' ? 'movie' : 'tv';
-        const params = {
-            sort_by: 'popularity.desc',
-            'vote_average.gte': 6.0, // lower threshold since keywords are very specific
-            'vote_count.gte': 50,
-            with_keywords: keywordIds.join('|'), // OR logic
-            page: 1,
-        };
-        const res = await getTmdbClient().get(`/discover/${t}`, { params });
-        return (res.data.results || [])
-            .slice(0, maxResults)
-            .map((r: TmdbResult) => tmdbResultToRecommendation(r, type, 'tmdb', 'Dynamic Keyword Search'));
-    } catch (err) {
-        addLog({ level: 'ERROR', message: `TMDb keyword discover failed: ${(err as Error).message}`, source: 'tmdb' });
-        return [];
+    const t = type === 'movie' ? 'movie' : 'tv';
+    const recommendations: Recommendation[] = [];
+    const seen = new Set<number>();
+    const languageTargets = languages.length > 0 ? languages.slice(0, 3) : [null];
+    const resultsPerRequest = Math.max(1, Math.ceil(maxResults / languageTargets.length));
+
+    for (const language of languageTargets) {
+        try {
+            const params: Record<string, string | number> = {
+                sort_by: 'popularity.desc',
+                'vote_average.gte': 6.0, // lower threshold since keywords are very specific
+                'vote_count.gte': 50,
+                with_keywords: keywordIds.join('|'), // OR logic
+                page: 1,
+            };
+            if (language) {
+                params.with_original_language = language;
+            }
+
+            const res = await getTmdbClient().get(`/discover/${t}`, { params });
+            for (const result of (res.data.results || []).slice(0, resultsPerRequest) as TmdbResult[]) {
+                if (seen.has(result.id)) continue;
+                seen.add(result.id);
+                recommendations.push(tmdbResultToRecommendation(result, type, 'tmdb', 'Dynamic Keyword Search'));
+            }
+        } catch (err) {
+            addLog({ level: 'ERROR', message: `TMDb keyword discover failed: ${(err as Error).message}`, source: 'tmdb' });
+        }
     }
+
+    return recommendations;
 }
 
 export async function discoverByCrew(
     crewId: number,
     type: 'movie' | 'series',
     crewName: string,
-    maxResults = 5
+    maxResults = 5,
+    languages: string[] = []
 ): Promise<Recommendation[]> {
-    try {
-        const t = type === 'movie' ? 'movie' : 'tv';
-        const params = {
-            sort_by: 'vote_average.desc',
-            'vote_count.gte': 50,
-            with_crew: crewId,
-            page: 1,
-        };
-        const res = await getTmdbClient().get(`/discover/${t}`, { params });
-        return (res.data.results || [])
-            .slice(0, maxResults)
-            .map((r: TmdbResult) => tmdbResultToRecommendation(r, type, 'tmdb', `Creator: ${crewName}`));
-    } catch (err) {
-        addLog({ level: 'ERROR', message: `TMDb crew discover failed: ${(err as Error).message}`, source: 'tmdb' });
-        return [];
+    const t = type === 'movie' ? 'movie' : 'tv';
+    const recommendations: Recommendation[] = [];
+    const seen = new Set<number>();
+    const languageTargets = languages.length > 0 ? languages.slice(0, 3) : [null];
+    const resultsPerRequest = Math.max(1, Math.ceil(maxResults / languageTargets.length));
+
+    for (const language of languageTargets) {
+        try {
+            const params: Record<string, string | number> = {
+                sort_by: 'vote_average.desc',
+                'vote_count.gte': 50,
+                with_crew: crewId,
+                page: 1,
+            };
+            if (language) {
+                params.with_original_language = language;
+            }
+
+            const res = await getTmdbClient().get(`/discover/${t}`, { params });
+            for (const result of (res.data.results || []).slice(0, resultsPerRequest) as TmdbResult[]) {
+                if (seen.has(result.id)) continue;
+                seen.add(result.id);
+                recommendations.push(tmdbResultToRecommendation(result, type, 'tmdb', `Creator: ${crewName}`));
+            }
+        } catch (err) {
+            addLog({ level: 'ERROR', message: `TMDb crew discover failed: ${(err as Error).message}`, source: 'tmdb' });
+        }
     }
+
+    return recommendations;
 }

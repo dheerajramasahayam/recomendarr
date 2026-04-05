@@ -9,6 +9,11 @@ interface RecommendationDetailProps {
     feedbackProfile: FeedbackProfile;
     loading: boolean;
     onAction: (id: string, action: string) => void;
+    emptyState?: {
+        kicker: string;
+        title: string;
+        description: string;
+    };
 }
 
 export function RecommendationDetail({
@@ -16,16 +21,22 @@ export function RecommendationDetail({
     feedbackProfile,
     loading,
     onAction,
+    emptyState,
 }: RecommendationDetailProps) {
     const [trailerKey, setTrailerKey] = useState<string | null>(null);
     const [trailerLoading, setTrailerLoading] = useState(false);
+    const resolvedEmptyState = emptyState || {
+        kicker: 'Triage Workspace',
+        title: 'Select a recommendation',
+        description: 'Pick a title from the queue to inspect the recommendation rationale, watch the trailer, and approve or reject it.',
+    };
 
     if (!recommendation) {
         return (
             <div className="detail-empty">
-                <p className="detail-empty-kicker">Triage Workspace</p>
-                <h3>Select a recommendation</h3>
-                <p>Pick a title from the queue to inspect the recommendation rationale, watch the trailer, and approve or reject it.</p>
+                <p className="detail-empty-kicker">{resolvedEmptyState.kicker}</p>
+                <h3>{resolvedEmptyState.title}</h3>
+                <p>{resolvedEmptyState.description}</p>
             </div>
         );
     }

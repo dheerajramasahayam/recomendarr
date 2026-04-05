@@ -4,6 +4,7 @@ import * as mediaServer from '../src/lib/media-server';
 import * as radarr from '../src/lib/radarr';
 import * as sonarr from '../src/lib/sonarr';
 import * as tmdb from '../src/lib/tmdb';
+import * as aiRecommender from '../src/lib/ai-recommender';
 import * as config from '../src/lib/config';
 import * as database from '../src/lib/database';
 import type { AppConfig } from '../src/lib/config';
@@ -106,6 +107,71 @@ describe('Engine Integration Tests (Hybrid Mocking)', () => {
              vi.spyOn(mediaServer, 'createMediaServerConnector').mockReturnValue(createMockConnector([]));
             const result = await runRecommendationEngine();
             expect(result.watchedCount).toBe(0);
+            expect(result.totalNew).toBe(0);
+        });
+
+        it('should filter out AI recommendations whose resolved language does not match the explicit language filter', async () => {
+            const realCfg = config.getConfig();
+            vi.spyOn(config, 'getConfig').mockReturnValue({
+                ...realCfg,
+                scheduler: { ...realCfg.scheduler, autoAdd: false },
+                ai: { ...realCfg.ai, enabled: true, apiKey: 'test-key' },
+            } as AppConfig);
+
+            vi.spyOn(radarr, 'getAllRadarrMovies').mockResolvedValue([]);
+            vi.spyOn(sonarr, 'getAllSonarrSeries').mockResolvedValue([]);
+            vi.spyOn(mediaServer, 'createMediaServerConnector').mockReturnValue(createMockConnector(mockHistory));
+            vi.spyOn(database, 'addRecommendation').mockImplementation((r) => r);
+            vi.spyOn(database, 'getFeedbackProfile').mockReturnValue({
+                rejectedTitles: [],
+                preferredGenres: [],
+                avoidedGenres: [],
+                preferredMediaTypes: [],
+                avoidedMediaTypes: [],
+                feedbackReasons: {},
+                summary: '',
+            });
+            vi.spyOn(tmdb, 'getRecommendationsForItem').mockResolvedValue([]);
+            vi.spyOn(tmdb, 'discoverByFilters').mockResolvedValue([]);
+            vi.spyOn(tmdb, 'discoverByKeywords').mockResolvedValue([]);
+            vi.spyOn(tmdb, 'discoverByCrew').mockResolvedValue([]);
+            vi.spyOn(aiRecommender, 'generateTasteProfile').mockResolvedValue({ profile: 'test', keywords: [] });
+            vi.spyOn(aiRecommender, 'getAiRecommendations').mockResolvedValue([
+                {
+                    title: 'English Only',
+                    mediaType: 'movie',
+                    tmdbId: 999,
+                    source: 'ai',
+                    aiReasoning: 'Test recommendation',
+                    status: 'pending',
+                },
+            ]);
+            vi.spyOn(tmdb, 'searchTmdb').mockImplementation(async (title) => {
+                if (title === 'English Only') {
+                    return {
+                        id: 999,
+                        overview: 'English title',
+                        release_date: '2023-01-01',
+                        poster_path: '/poster.jpg',
+                        vote_average: 7,
+                        genre_ids: [28],
+                        original_language: 'en',
+                    };
+                }
+
+                return {
+                    id: 100,
+                    overview: 'History lookup',
+                    release_date: '2010-01-01',
+                    poster_path: '/history.jpg',
+                    vote_average: 8,
+                    genre_ids: [28],
+                    original_language: 'es',
+                };
+            });
+
+            const result = await runRecommendationEngine({ language: 'es' });
+
             expect(result.totalNew).toBe(0);
         });
     });

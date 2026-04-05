@@ -1,22 +1,32 @@
 import { NextResponse } from 'next/server';
 import { getRecommendations, updateRecommendationStatus, getRecommendationCounts } from '@/lib/database';
 import { approveAndAdd } from '@/lib/engine';
-import type { FeedbackReason } from '@/lib/types';
+import type { FeedbackReason, Recommendation } from '@/lib/types';
+
+function isRecommendationStatus(value: string): value is Recommendation['status'] {
+    return ['pending', 'approved', 'rejected', 'added'].includes(value);
+}
 
 export async function GET(request: Request) {
     try {
         const { searchParams } = new URL(request.url);
-        const status = searchParams.get('status') || undefined;
+        const statusParam = searchParams.get('status');
         const limit = parseInt(searchParams.get('limit') || '50', 10);
         const offset = parseInt(searchParams.get('offset') || '0', 10);
         const countsOnly = searchParams.get('counts') === 'true';
+        const statuses: Recommendation['status'][] | undefined = statusParam
+            ? statusParam
+                .split(',')
+                .map((value) => value.trim())
+                .filter(isRecommendationStatus)
+            : undefined;
 
         if (countsOnly) {
             const counts = getRecommendationCounts();
             return NextResponse.json(counts);
         }
 
-        const recommendations = getRecommendations(status, limit, offset);
+        const recommendations = getRecommendations(statuses, limit, offset);
         const counts = getRecommendationCounts();
         return NextResponse.json({ recommendations, counts });
     } catch (err) {
